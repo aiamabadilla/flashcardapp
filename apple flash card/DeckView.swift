@@ -107,7 +107,7 @@ struct DeckView: View {
                 .disabled(all.isEmpty)
             }
         }
-        .confirmationDialog("Delete \"\(deck.title)\" and all its cards?",
+        .confirmationDialog("Move \"\(deck.title)\" and its cards to Recently Deleted?",
                             isPresented: $confirmingDelete, titleVisibility: .visible) {
             Button("Delete Deck", role: .destructive) {
                 Haptics.warning()

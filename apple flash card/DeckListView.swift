@@ -4,10 +4,13 @@ import SwiftData
 struct DeckListView: View {
     @Environment(\.modelContext) private var context
     @Environment(\.scenePhase) private var scenePhase
-    @Query(sort: \Deck.created) private var decks: [Deck]
+    @Query(filter: #Predicate<Deck> { $0.deletedAt == 0 }, sort: \Deck.created) private var decks: [Deck]
+    @Query(filter: #Predicate<Deck> { $0.deletedAt > 0 }) private var trashedDecks: [Deck]
+    @Query(filter: #Predicate<Card> { $0.deletedAt > 0 }) private var trashedCards: [Card]
     @State private var path: [Deck] = []
     @State private var pendingDelete: Deck?
     @State private var showingStats = false
+    @State private var showingTrash = false
 
     var body: some View {
         NavigationStack(path: $path) {
@@ -20,7 +23,7 @@ struct DeckListView: View {
                         VStack(alignment: .leading, spacing: 4) {
                             Text(deck.title.isEmpty ? "Untitled Deck" : deck.title).font(.headline)
                             let due = deck.dueCards.count
-                            (Text("\(deck.cards.count) \(deck.cards.count == 1 ? "card" : "cards")")
+                            (Text("\(deck.liveCards.count) \(deck.liveCards.count == 1 ? "card" : "cards")")
                              + (due > 0 ? Text(" · \(due) due").foregroundStyle(.orange) : Text("")))
                                 .font(.subheadline).foregroundStyle(.secondary)
                         }
@@ -37,6 +40,17 @@ struct DeckListView: View {
                         Button("Delete", systemImage: "trash", role: .destructive) { pendingDelete = deck }
                     }
                 }
+
+                Button { Haptics.tap(); showingTrash = true } label: {
+                    HStack {
+                        Label("Recently Deleted", systemImage: "trash")
+                        Spacer()
+                        if trashCount > 0 { Text("\(trashCount)").foregroundStyle(.secondary) }
+                        Image(systemName: "chevron.right").font(.footnote.bold()).foregroundStyle(.tertiary)
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
             }
             .overlay {
                 if decks.isEmpty {
@@ -44,7 +58,7 @@ struct DeckListView: View {
                                            description: Text("Tap + to create your first deck."))
                 }
             }
-            .confirmationDialog("Delete \"\(pendingDelete?.title ?? "")\" and all its cards?",
+            .confirmationDialog("Move \"\(pendingDelete?.title ?? "")\" and its cards to Recently Deleted?",
                                 isPresented: Binding(get: { pendingDelete != nil },
                                                      set: { if !$0 { pendingDelete = nil } }),
                                 titleVisibility: .visible) {
@@ -54,8 +68,12 @@ struct DeckListView: View {
                 }
             }
             .sheet(isPresented: $showingStats) { StatsView() }
+            .sheet(isPresented: $showingTrash) { RecentlyDeletedView() }
             .undoBanner()
-            .task { PhotoCleanup.run(in: context) }   // clear photo files left behind by deletes
+            .task {
+                Trash.purgeExpired(in: context)   // remove anything deleted over 30 days ago
+                PhotoCleanup.run(in: context)     // then clear photo files nothing uses
+            }
             .onChange(of: scenePhase) {
                 if scenePhase == .background { PhotoCleanup.run(in: context) }
             }
@@ -71,6 +89,13 @@ struct DeckListView: View {
                 }
             }
         }
+    }
+
+    /// Items in Recently Deleted: decks, plus deleted cards whose deck still exists.
+    private var trashCount: Int {
+        trashedDecks.count + trashedCards.filter { card in
+            decks.contains { $0.cards.contains { $0 === card } }
+        }.count
     }
 
     private func newDeck() {

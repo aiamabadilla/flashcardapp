@@ -31,6 +31,8 @@ nonisolated struct ImageItem: Codable, Identifiable, Equatable, Sendable {
 @Model final class Deck {
     var title: String
     var created: Date
+    /// When the deck was moved to Recently Deleted (seconds since 1970); 0 = not deleted.
+    var deletedAt = 0.0
     @Relationship(deleteRule: .cascade) var cards: [Card] = []
 
     init(title: String = "Untitled Deck") {
@@ -38,18 +40,22 @@ nonisolated struct ImageItem: Codable, Identifiable, Equatable, Sendable {
         self.created = .now
     }
 
-    var sortedCards: [Card] { cards.sorted { $0.order < $1.order } }
+    /// Cards that haven't been moved to Recently Deleted.
+    var liveCards: [Card] { cards.filter { $0.deletedAt == 0 } }
+    var inTrash: Bool { deletedAt > 0 }
+
+    var sortedCards: [Card] { liveCards.sorted { $0.order < $1.order } }
     var starredCards: [Card] { sortedCards.filter(\.isStarred) }
 
     /// Cards due for review now: most overdue first, new cards (never reviewed) included.
     var dueCards: [Card] {
-        cards.filter(\.isDue).sorted { ($0.dueTime, $0.order) < ($1.dueTime, $1.order) }
+        liveCards.filter(\.isDue).sorted { ($0.dueTime, $0.order) < ($1.dueTime, $1.order) }
     }
-    var newCount: Int { cards.filter(\.isNew).count }
-    var masteredCount: Int { cards.filter(\.isMastered).count }
+    var newCount: Int { liveCards.filter(\.isNew).count }
+    var masteredCount: Int { liveCards.filter(\.isMastered).count }
 
     func newCard() -> Card {
-        let card = Card(order: (cards.map(\.order).max() ?? -1) + 1)
+        let card = Card(order: (liveCards.map(\.order).max() ?? -1) + 1)
         cards.append(card)
         return card
     }
@@ -80,6 +86,8 @@ nonisolated struct ImageItem: Codable, Identifiable, Equatable, Sendable {
     var backBoxW = 0.96
     var backBoxSize = 0.03
     var isStarred: Bool = false
+    /// When the card was moved to Recently Deleted (seconds since 1970); 0 = not deleted.
+    var deletedAt = 0.0
     // Spaced repetition (Leitner boxes). Plain numbers with defaults so stores migrate.
     var leitnerBox = 0            // 0 = learning ... 5 = best known
     var dueTime = 0.0             // seconds since 1970; 0 = never reviewed, due now
@@ -96,6 +104,8 @@ nonisolated struct ImageItem: Codable, Identifiable, Equatable, Sendable {
         self.front = Data()
         self.back = Data()
     }
+
+    var inTrash: Bool { deletedAt > 0 }
 
     func drawing(_ side: Side) -> Data { side == .front ? front : back }
     func isLined(_ side: Side) -> Bool { side == .front ? frontLined : backLined }

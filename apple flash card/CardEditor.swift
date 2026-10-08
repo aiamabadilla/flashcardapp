@@ -92,7 +92,7 @@ struct CardEditor: View {
                 Label("Delete Card", systemImage: "trash").labelStyle(.iconOnly)
             }
             .frame(width: 80, alignment: .trailing)
-            .confirmationDialog("Delete this card?", isPresented: $confirmingDelete,
+            .confirmationDialog("Move this card to Recently Deleted?", isPresented: $confirmingDelete,
                                 titleVisibility: .visible) {
                 Button("Delete Card", role: .destructive) { deleteCard() }
             }

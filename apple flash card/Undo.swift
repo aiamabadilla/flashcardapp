@@ -67,60 +67,32 @@ extension View {
     }
 }
 
-// MARK: - Deleting with undo
-
-extension Card {
-    /// A free-standing copy (not in any context) used to bring a deleted card back.
-    func detachedCopy() -> Card {
-        let c = Card(order: order)
-        c.front = front; c.back = back
-        c.frontText = frontText; c.backText = backText
-        c.frontLined = frontLined; c.backLined = backLined
-        c.isStarred = isStarred
-        c.frontBoxX = frontBoxX; c.frontBoxY = frontBoxY; c.frontBoxW = frontBoxW; c.frontBoxSize = frontBoxSize
-        c.backBoxX = backBoxX; c.backBoxY = backBoxY; c.backBoxW = backBoxW; c.backBoxSize = backBoxSize
-        c.textItemsJSON = textItemsJSON
-        c.imageItemsJSON = imageItemsJSON
-        c.leitnerBox = leitnerBox; c.dueTime = dueTime
-        c.reviewCount = reviewCount; c.correctCount = correctCount; c.lastReviewed = lastReviewed
-        return c
-    }
-}
+// MARK: - Deleting (moves to Recently Deleted) and restoring
 
 extension Deck {
-    func detachedCopy() -> Deck {
-        let d = Deck(title: title)
-        d.created = created
-        d.cards = cards.map { $0.detachedCopy() }
-        return d
-    }
-
     /// Puts a card back at its old position, shifting later cards along.
-    func insertCard(_ card: Card) {
-        for other in cards where other.order >= card.order { other.order += 1 }
-        cards.append(card)
+    func restoreCard(_ card: Card) {
+        for other in liveCards where other.order >= card.order { other.order += 1 }
+        card.deletedAt = 0
     }
 
-    /// Deletes a card and offers to undo it.
+    /// Moves a card to Recently Deleted and offers to undo.
     @MainActor func deleteCard(_ card: Card, in context: ModelContext) {
-        let copy = card.detachedCopy()
-        cards.removeAll { $0 === card }
-        context.delete(card)
+        card.deletedAt = Date().timeIntervalSince1970
         renumber()
         UndoCenter.shared.offer("Card deleted") { [self] in
-            insertCard(copy)
+            restoreCard(card)
             try? context.save()
         }
     }
 }
 
 extension ModelContext {
-    /// Deletes a deck (and its cards) and offers to undo it.
+    /// Moves a deck (and its cards) to Recently Deleted and offers to undo.
     @MainActor func deleteDeck(_ deck: Deck) {
-        let copy = deck.detachedCopy()
-        delete(deck)
+        deck.deletedAt = Date().timeIntervalSince1970
         UndoCenter.shared.offer("Deck deleted") { [self] in
-            insert(copy)
+            deck.deletedAt = 0
             try? save()
         }
     }

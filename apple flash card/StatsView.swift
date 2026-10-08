@@ -34,7 +34,8 @@ struct StreakBanner: View {
 struct StatsView: View {
     @Environment(\.dismiss) private var dismiss
     @ObservedObject private var log = StudyLog.shared
-    @Query private var cards: [Card]
+    @Query(filter: #Predicate<Deck> { $0.deletedAt == 0 }) private var decks: [Deck]
+    private var cards: [Card] { decks.flatMap(\.liveCards) }
     @Environment(\.modelContext) private var context
     @State private var storageVersion = 0   // refreshes the storage numbers after a clean-up
 
