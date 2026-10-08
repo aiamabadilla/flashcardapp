@@ -4,6 +4,8 @@ import PencilKit
 struct DrawingCanvas: UIViewRepresentable {
     @Binding var data: Data
     var viewport: Viewport? = nil
+    /// Called with a finger tap's position in card coordinates (zoom already removed).
+    var onTap: ((CGPoint) -> Void)? = nil
     /// False while typing, so the keyboard and the tool picker don't fight.
     var isActive = true
     @Environment(\.colorScheme) private var scheme
@@ -23,6 +25,11 @@ struct DrawingCanvas: UIViewRepresentable {
         canvas.minimumZoomScale = 1
         canvas.maximumZoomScale = 5
         canvas.delegate = context.coordinator
+        // Finger taps select photos and text; the Pencil keeps drawing, even over them.
+        let tap = UITapGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.handleTap(_:)))
+        tap.allowedTouchTypes = [NSNumber(value: UITouch.TouchType.direct.rawValue)]
+        tap.delegate = context.coordinator
+        canvas.addGestureRecognizer(tap)
         canvas.drawing = (try? PKDrawing(data: data)) ?? PKDrawing()
         context.coordinator.canvas = canvas
         viewport?.scrollView = canvas
@@ -38,6 +45,7 @@ struct DrawingCanvas: UIViewRepresentable {
     }
 
     func updateUIView(_ uiView: PKCanvasView, context: Context) {
+        context.coordinator.onTap = onTap
         // PencilKit flips black ink to white (and adapts other colors) in dark mode.
         uiView.overrideUserInterfaceStyle = scheme == .dark ? .dark : .light
         if isActive {
@@ -51,7 +59,8 @@ struct DrawingCanvas: UIViewRepresentable {
         coordinator.flush()
     }
 
-    final class Coordinator: NSObject, PKCanvasViewDelegate {
+    final class Coordinator: NSObject, PKCanvasViewDelegate, UIGestureRecognizerDelegate {
+        var onTap: ((CGPoint) -> Void)?
         var data: Binding<Data>
         let picker = PKToolPicker()
         weak var canvas: PKCanvasView?
@@ -67,6 +76,18 @@ struct DrawingCanvas: UIViewRepresentable {
                 forName: UIApplication.willResignActiveNotification, object: nil, queue: .main
             ) { [weak self] _ in MainActor.assumeIsolated { self?.flush() } }
         }
+
+        @objc func handleTap(_ gesture: UITapGestureRecognizer) {
+            guard let canvas, let onTap else { return }
+            // Location in a scroll view is in content coordinates, i.e. already includes the
+            // pan offset and is scaled by the zoom.
+            let point = gesture.location(in: canvas)
+            let zoom = max(canvas.zoomScale, 0.01)
+            onTap(CGPoint(x: point.x / zoom, y: point.y / zoom))
+        }
+
+        func gestureRecognizer(_ g: UIGestureRecognizer,
+                               shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer) -> Bool { true }
 
         func scrollViewDidScroll(_ scrollView: UIScrollView) { report(scrollView) }
         func scrollViewDidZoom(_ scrollView: UIScrollView) { report(scrollView) }

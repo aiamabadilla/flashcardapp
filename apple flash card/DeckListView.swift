@@ -48,11 +48,12 @@ struct DeckListView: View {
                                                      set: { if !$0 { pendingDelete = nil } }),
                                 titleVisibility: .visible) {
                 Button("Delete Deck", role: .destructive) {
-                    if let deck = pendingDelete { Haptics.warning(); context.delete(deck) }
+                    if let deck = pendingDelete { Haptics.warning(); context.deleteDeck(deck) }
                     pendingDelete = nil
                 }
             }
             .sheet(isPresented: $showingStats) { StatsView() }
+            .undoBanner()
             .navigationTitle("Decks")
             .navigationDestination(for: Deck.self) { DeckView(deck: $0) }
             .toolbar {

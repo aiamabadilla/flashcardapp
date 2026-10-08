@@ -112,7 +112,7 @@ struct DeckView: View {
             Button("Delete Deck", role: .destructive) {
                 Haptics.warning()
                 dismiss()
-                context.delete(deck)
+                context.deleteDeck(deck)
             }
         }
         .fullScreenCover(item: $editor) { CardEditor(deck: deck, start: $0.card) }
@@ -163,9 +163,7 @@ struct DeckView: View {
 
     private func delete(_ card: Card) {
         Haptics.warning()
-        deck.cards.removeAll { $0 === card }
-        context.delete(card)
-        deck.renumber()
+        deck.deleteCard(card, in: context)
     }
 }
 

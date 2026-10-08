@@ -1,5 +1,6 @@
 import SwiftUI
 import SwiftData
+import PhotosUI
 
 struct CardEditor: View {
     let deck: Deck
@@ -10,6 +11,8 @@ struct CardEditor: View {
     @State private var showingFront = true
     @State private var angle = 0.0
     @State private var selectedID: UUID?
+    @State private var selectedImageID: UUID?
+    @State private var photoSelection: PhotosPickerItem?
     @State private var confirmingDelete = false
     @FocusState private var textFocused: Bool
     @StateObject private var viewport = Viewport()
@@ -21,7 +24,8 @@ struct CardEditor: View {
 
     private let buttonWidth: CGFloat = 170
     private var side: Side { showingFront ? .front : .back }
-    private var typing: Bool { selectedID != nil }
+    /// True while a text box or photo is selected for editing.
+    private var typing: Bool { selectedID != nil || selectedImageID != nil }
 
     var body: some View {
         let editing = Bindable(card)
@@ -31,7 +35,14 @@ struct CardEditor: View {
         VStack(spacing: typing ? 12 : 20) {
             header(index: index, count: cards.count)
             cardArea(editing)
-            if typing {
+            if typing && selectedID == nil {
+                // A photo is selected: just a way to finish.
+                Button { Haptics.tap(); deselect() } label: {
+                    Label("Done", systemImage: "checkmark").frame(width: buttonWidth * 3 + 32)
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.large)
+            } else if typing {
                 // Keep the card as large as possible above the keyboard.
                 HStack(spacing: 16) {
                     Button { Haptics.tap(); scaleFont(0.9) } label: {
@@ -55,6 +66,12 @@ struct CardEditor: View {
         }
         .padding(.top, typing ? 12 : 24)
         .animation(.easeInOut(duration: 0.2), value: typing)
+        .undoBanner(bottom: 150)
+        .onChange(of: photoSelection) {
+            guard let picked = photoSelection else { return }
+            photoSelection = nil
+            Task { await importPhoto(picked) }
+        }
     }
 
     // MARK: Header
@@ -88,6 +105,7 @@ struct CardEditor: View {
     private func cardArea(_ editing: Bindable<Card>) -> some View {
         let drawing = showingFront ? editing.front : editing.back
         let items = card.textItems(side)
+        let images = card.imageItems(side)
 
         // The placeholder fixes the card's size; the content is overlaid so the
         // canvas's large intrinsic size can't stretch the layout.
@@ -101,7 +119,14 @@ struct CardEditor: View {
                             ZoomingLines(viewport: viewport)
                                 .clipShape(RoundedRectangle(cornerRadius: 18))
                         }
-                        DrawingCanvas(data: drawing, viewport: viewport, isActive: !typing)
+                        // Photos sit under the ink so you can draw over them.
+                        ZoomingImages(viewport: viewport,
+                                      items: images.filter { $0.id != selectedImageID },
+                                      card: geo.size)
+                            .clipShape(RoundedRectangle(cornerRadius: 18))
+                        DrawingCanvas(data: drawing, viewport: viewport,
+                                      onTap: { selectPhoto(at: $0, in: images, card: geo.size) },
+                                      isActive: !typing)
                             .id("\(ObjectIdentifier(card).hashValue)-\(showingFront)")
                             .clipShape(RoundedRectangle(cornerRadius: 18))
                             .allowsHitTesting(!typing)
@@ -114,6 +139,11 @@ struct CardEditor: View {
                                      items: items.filter { $0.id != selectedID },
                                      card: geo.size) { select($0) }
                             .clipShape(RoundedRectangle(cornerRadius: 18))
+                        if let id = selectedImageID, images.contains(where: { $0.id == id }) {
+                            ImageBoxEditor(item: imageBinding(id), card: geo.size,
+                                           onDelete: { deleteSelectedImage() })
+                                .id(id)
+                        }
                         if let id = selectedID, items.contains(where: { $0.id == id }) {
                             TextBoxEditor(item: itemBinding(id), card: geo.size,
                                           focus: $textFocused, onDelete: { deleteSelected() })
@@ -124,6 +154,13 @@ struct CardEditor: View {
             }
             .padding(.horizontal, 40)
             .rotation3DEffect(.degrees(angle), axis: (x: 0, y: 1, z: 0))
+    }
+
+    private func imageBinding(_ id: UUID) -> Binding<ImageItem> {
+        Binding(
+            get: { card.imageItem(id) ?? ImageItem(side: 0, file: "", aspect: 1) },
+            set: { card.updateImageItem($0) }
+        )
     }
 
     private func itemBinding(_ id: UUID) -> Binding<TextItem> {
@@ -164,6 +201,11 @@ struct CardEditor: View {
                     card.toggleLines(side)
                 }
                 toggleButton("Add Text", icon: "textbox", on: false, tint: .blue) { addText() }
+                PhotosPicker(selection: $photoSelection, matching: .images) {
+                    Label("Add Photo", systemImage: "photo").frame(width: buttonWidth)
+                }
+                .buttonStyle(.bordered)
+                .tint(.gray)
                 toggleButton("Star", icon: card.isStarred ? "star.fill" : "star",
                              on: card.isStarred, tint: .yellow) {
                     card.isStarred.toggle()
@@ -172,7 +214,7 @@ struct CardEditor: View {
 
             // Row 3: add the next card
             Button { addCard() } label: {
-                Label("New Card", systemImage: "plus").frame(width: buttonWidth * 3 + 32)
+                Label("New Card", systemImage: "plus").frame(width: buttonWidth * 4 + 48)
             }
             .buttonStyle(.borderedProminent)
             .tint(.green)
@@ -210,6 +252,49 @@ struct CardEditor: View {
         selectedID = item.id
     }
 
+    private func importPhoto(_ picked: PhotosPickerItem) async {
+        guard let data = try? await picked.loadTransferable(type: Data.self),
+              let image = UIImage(data: data),
+              let stored = ImageStore.save(image) else { return }
+        viewport.resetCanvasZoom()
+        deselect()
+        // Start centred at 40% of the card's width, but never taller than 70% of its height.
+        let cardRatio = 5.0 / 3.0   // card width / height
+        let heightPerWidth = max(stored.aspect * cardRatio, 0.01)   // photo height as a fraction of card height, per unit w
+        let w = min(0.4, max(0.12, 0.7 / heightPerWidth))
+        let item = ImageItem(side: side == .front ? 0 : 1, file: stored.file, aspect: stored.aspect,
+                             x: (1 - w) / 2, y: max(0, (1 - w * heightPerWidth) / 2), w: w)
+        card.updateImageItem(item)
+        Haptics.success()
+        selectedImageID = item.id
+    }
+
+    /// A finger tap on the canvas: select the topmost photo under it, if any.
+    private func selectPhoto(at point: CGPoint, in images: [ImageItem], card size: CGSize) {
+        guard !typing else { return }
+        for item in images.reversed() {
+            let width = item.w * size.width
+            let rect = CGRect(x: item.x * size.width, y: item.y * size.height,
+                              width: width, height: width * item.aspect)
+            if rect.contains(point) {
+                Haptics.tap()
+                viewport.resetCanvasZoom()
+                selectedImageID = item.id
+                return
+            }
+        }
+    }
+
+    private func deleteSelectedImage() {
+        Haptics.warning()
+        if let id = selectedImageID, let item = card.imageItem(id) {
+            let owner = card
+            card.removeImageItem(id)
+            UndoCenter.shared.offer("Photo deleted") { owner.updateImageItem(item) }
+        }
+        selectedImageID = nil
+    }
+
     private func select(_ id: UUID) {
         Haptics.tap()
         if selectedID != id { discardIfEmpty() }
@@ -221,12 +306,17 @@ struct CardEditor: View {
     private func deselect() {
         discardIfEmpty()
         selectedID = nil
+        selectedImageID = nil
         textFocused = false
     }
 
     private func deleteSelected() {
         Haptics.warning()
-        if let id = selectedID { card.removeTextItem(id) }
+        if let id = selectedID, let item = card.textItem(id) {
+            let owner = card
+            card.removeTextItem(id)
+            UndoCenter.shared.offer("Text box deleted") { owner.updateTextItem(item) }
+        }
         selectedID = nil
         textFocused = false
     }
@@ -268,9 +358,7 @@ struct CardEditor: View {
         let neighbor = all.indices.contains(index + 1) ? all[index + 1]
                      : (index > 0 ? all[index - 1] : nil)
         if let neighbor { show(neighbor) }
-        deck.cards.removeAll { $0 === doomed }
-        context.delete(doomed)
-        deck.renumber()
+        deck.deleteCard(doomed, in: context)
         if neighbor == nil { dismiss() }
     }
 

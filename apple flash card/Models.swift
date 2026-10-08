@@ -16,6 +16,18 @@ nonisolated struct TextItem: Codable, Identifiable, Equatable, Sendable {
     var size = 0.03
 }
 
+/// A photo placed on a card side. Position and width are fractions of the card;
+/// `aspect` is height divided by width.
+nonisolated struct ImageItem: Codable, Identifiable, Equatable, Sendable {
+    var id = UUID()
+    var side: Int            // 0 = front, 1 = back
+    var file: String         // file name inside ImageStore
+    var aspect: Double
+    var x = 0.3
+    var y = 0.2
+    var w = 0.4
+}
+
 @Model final class Deck {
     var title: String
     var created: Date
@@ -76,6 +88,8 @@ nonisolated struct TextItem: Codable, Identifiable, Equatable, Sendable {
     var lastReviewed = 0.0
     // All text boxes (both sides) as JSON. A plain String keeps store migration trivial.
     var textItemsJSON: String = ""
+    // Photos on the card (metadata only; the image files live in ImageStore).
+    var imageItemsJSON: String = ""
 
     init(order: Int) {
         self.order = order
@@ -160,5 +174,35 @@ nonisolated struct TextItem: Codable, Identifiable, Equatable, Sendable {
 
     func removeTextItem(_ id: UUID) {
         store(allTextItems.filter { $0.id != id })
+    }
+
+    // MARK: Photos
+
+    var allImageItems: [ImageItem] {
+        guard !imageItemsJSON.isEmpty, let data = imageItemsJSON.data(using: .utf8),
+              let items = try? JSONDecoder().decode([ImageItem].self, from: data) else { return [] }
+        return items
+    }
+
+    func imageItems(_ side: Side) -> [ImageItem] {
+        allImageItems.filter { $0.side == (side == .front ? 0 : 1) }
+    }
+
+    func imageItem(_ id: UUID) -> ImageItem? { allImageItems.first { $0.id == id } }
+
+    private func storeImages(_ items: [ImageItem]) {
+        if let data = try? JSONEncoder().encode(items), let json = String(data: data, encoding: .utf8) {
+            imageItemsJSON = json
+        }
+    }
+
+    func updateImageItem(_ item: ImageItem) {
+        var items = allImageItems
+        if let i = items.firstIndex(where: { $0.id == item.id }) { items[i] = item } else { items.append(item) }
+        storeImages(items)
+    }
+
+    func removeImageItem(_ id: UUID) {
+        storeImages(allImageItems.filter { $0.id != id })
     }
 }
