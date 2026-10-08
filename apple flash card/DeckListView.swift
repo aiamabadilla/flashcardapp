@@ -1,5 +1,6 @@
 import SwiftUI
 import SwiftData
+import UniformTypeIdentifiers
 
 struct DeckListView: View {
     @Environment(\.modelContext) private var context
@@ -11,6 +12,9 @@ struct DeckListView: View {
     @State private var pendingDelete: Deck?
     @State private var showingStats = false
     @State private var showingTrash = false
+    @State private var exported: ExportedFile?
+    @State private var showingImporter = false
+    @State private var backupMessage: String?
 
     var body: some View {
         NavigationStack(path: $path) {
@@ -40,6 +44,9 @@ struct DeckListView: View {
                         .tint(.red)
                     }
                     .contextMenu {
+                        Button("Export Deck", systemImage: "square.and.arrow.up") {
+                            export([deck], name: deck.title)
+                        }
                         Button("Delete", systemImage: "trash", role: .destructive) { pendingDelete = deck }
                     }
                     // Attached to the row (not the whole screen) so the popup points at this deck.
@@ -77,6 +84,28 @@ struct DeckListView: View {
             }
             .sheet(isPresented: $showingStats) { StatsView() }
             .sheet(isPresented: $showingTrash) { RecentlyDeletedView() }
+            .sheet(item: $exported) { ShareSheet(url: $0.url) }
+            .fileImporter(isPresented: $showingImporter, allowedContentTypes: [.item]) { result in
+                switch result {
+                case .success(let url):
+                    do {
+                        let r = try Backup.importArchive(from: url, into: context)
+                        Haptics.success()
+                        backupMessage = "Restored \(plural(r.decks, "deck")) with \(plural(r.cards, "card"))."
+                    } catch {
+                        Haptics.warning()
+                        backupMessage = error.localizedDescription
+                    }
+                case .failure(let error):
+                    backupMessage = error.localizedDescription
+                }
+            }
+            .alert("Backup", isPresented: Binding(get: { backupMessage != nil },
+                                                  set: { if !$0 { backupMessage = nil } })) {
+                Button("OK") { backupMessage = nil }
+            } message: {
+                Text(backupMessage ?? "")
+            }
             .undoBanner()
             .task {
                 Trash.purgeExpired(in: context)   // remove anything deleted over 30 days ago
@@ -92,6 +121,18 @@ struct DeckListView: View {
                     Button { Haptics.tap(); showingStats = true } label: {
                         Label("Stats", systemImage: "chart.bar.xaxis")
                     }
+                    Menu {
+                        Button("Back Up All Decks", systemImage: "square.and.arrow.up") {
+                            export(decks, name: "IMSTUDY Backup")
+                        }
+                        .disabled(decks.isEmpty)
+                        Button("Restore from Backup…", systemImage: "square.and.arrow.down") {
+                            Haptics.tap()
+                            showingImporter = true
+                        }
+                    } label: {
+                        Label("Backup", systemImage: "externaldrive")
+                    }
                     AppearanceMenu()
                     Button { newDeck() } label: { Label("New Deck", systemImage: "plus") }
                 }
@@ -104,6 +145,15 @@ struct DeckListView: View {
         trashedDecks.count + trashedCards.filter { card in
             decks.contains { $0.cards.contains { $0 === card } }
         }.count
+    }
+
+    private func export(_ decks: [Deck], name: String) {
+        do {
+            exported = ExportedFile(url: try Backup.export(decks, name: name))
+            Haptics.tap()
+        } catch {
+            backupMessage = "Couldn't create the backup: \(error.localizedDescription)"
+        }
     }
 
     private func newDeck() {

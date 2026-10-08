@@ -45,6 +45,18 @@ enum ImageStore {
         }
     }
 
+    /// Raw bytes of a stored photo (for backups).
+    static func fileData(_ file: String) -> Data? {
+        try? Data(contentsOf: directory.appendingPathComponent(file))
+    }
+
+    /// Writes a photo file under a known name (for restoring backups). Existing files are kept.
+    static func write(_ data: Data, as file: String) {
+        let url = directory.appendingPathComponent(file)
+        guard !FileManager.default.fileExists(atPath: url.path) else { return }
+        try? data.write(to: url)
+    }
+
     static func delete(_ names: [String]) {
         for name in names {
             try? FileManager.default.removeItem(at: directory.appendingPathComponent(name))
