@@ -49,7 +49,8 @@ struct DeckListView: View {
             .navigationTitle("Decks")
             .navigationDestination(for: Deck.self) { DeckView(deck: $0) }
             .toolbar {
-                ToolbarItem(placement: .primaryAction) {
+                ToolbarItemGroup(placement: .primaryAction) {
+                    AppearanceMenu()
                     Button { newDeck() } label: { Label("New Deck", systemImage: "plus") }
                 }
             }

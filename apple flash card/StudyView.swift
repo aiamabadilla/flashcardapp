@@ -2,51 +2,54 @@ import SwiftUI
 
 /// Shows each card's front; tap to flip to the back.
 struct StudyView: View {
-    let deck: Deck
+    @State private var cards: [Card]
     @Environment(\.dismiss) private var dismiss
-    @State private var cards: [Card] = []
     @State private var index = 0
     @State private var showingBack = false
     @State private var angle = 0.0
+
+    init(cards: [Card]) { _cards = State(initialValue: cards) }
 
     var body: some View {
         VStack(spacing: 24) {
             HStack {
                 Button("Done") { Haptics.tap(); dismiss() }
+                    .frame(width: 100, alignment: .leading)
                 Spacer()
                 Text(cards.isEmpty ? "" : "\(index + 1) of \(cards.count)").font(.headline)
                 Spacer()
                 Button("Shuffle", systemImage: "shuffle") { Haptics.tap(); cards.shuffle(); go(to: 0) }
+                    .frame(width: 100, alignment: .trailing)
             }
             .padding(.horizontal)
 
             if let card = current {
-                ZStack {
-                    RoundedRectangle(cornerRadius: 18).fill(.white).shadow(radius: 10)
-                    CardLines()
-                    DrawingImage(data: showingBack ? card.back : card.front, padding: 24)
-                }
-                .aspectRatio(5.0 / 3.0, contentMode: .fit)
-                .padding(.horizontal, 40)
-                .rotation3DEffect(.degrees(angle), axis: (x: 0, y: 1, z: 0))
-                .onTapGesture { flip() }
+                CardFace(card: card, side: showingBack ? .back : .front, corner: 18, inset: 24)
+                    .shadow(radius: 10)
+                    .padding(.horizontal, 40)
+                    .rotation3DEffect(.degrees(angle), axis: (x: 0, y: 1, z: 0))
+                    .onTapGesture { flip() }
 
                 Text(showingBack ? "Back — tap to flip" : "Front — tap to flip")
                     .font(.subheadline).foregroundStyle(.secondary)
 
                 HStack(spacing: 24) {
-                    Button { go(to: index - 1) } label: { Label("Previous", systemImage: "chevron.left").frame(width: 170) }
-                        .disabled(index == 0)
-                    Button { go(to: index + 1) } label: { Label("Next", systemImage: "chevron.right").labelStyle(TrailingIconLabelStyle()).frame(width: 170) }
-                        .disabled(index >= cards.count - 1)
+                    Button { go(to: index - 1) } label: {
+                        Label("Previous", systemImage: "chevron.left").frame(width: 170)
+                    }
+                    .disabled(index == 0)
+                    Button { go(to: index + 1) } label: {
+                        Label("Next", systemImage: "chevron.right")
+                            .labelStyle(TrailingIconLabelStyle()).frame(width: 170)
+                    }
+                    .disabled(index >= cards.count - 1)
                 }
                 .buttonStyle(.borderedProminent)
-                .font(.title3)
+                .controlSize(.large)
             }
             Spacer()
         }
         .padding(.top, 24)
-        .onAppear { cards = deck.sortedCards }
     }
 
     private var current: Card? { cards.indices.contains(index) ? cards[index] : nil }

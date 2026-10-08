@@ -3,6 +3,9 @@ import PencilKit
 
 struct DrawingCanvas: UIViewRepresentable {
     @Binding var data: Data
+    /// False while typing, so the keyboard and the tool picker don't fight.
+    var isActive = true
+    @Environment(\.colorScheme) private var scheme
 
     func makeCoordinator() -> Coordinator { Coordinator(data: $data) }
 
@@ -13,55 +16,69 @@ struct DrawingCanvas: UIViewRepresentable {
         #else
         canvas.drawingPolicy = .pencilOnly    // Pencil draws, fingers pan and zoom
         #endif
-        canvas.overrideUserInterfaceStyle = .light  // cards are white; keep ink black
         canvas.backgroundColor = .clear
         canvas.isOpaque = false
         canvas.minimumZoomScale = 1
         canvas.maximumZoomScale = 5
         canvas.delegate = context.coordinator
         canvas.drawing = (try? PKDrawing(data: data)) ?? PKDrawing()
+        context.coordinator.canvas = canvas
 
         DispatchQueue.main.async {
             let picker = context.coordinator.picker
             picker.addObserver(canvas)
             picker.setVisible(true, forFirstResponder: canvas)
-            canvas.becomeFirstResponder()
+            if isActive { canvas.becomeFirstResponder() }
         }
         return canvas
     }
 
-    func updateUIView(_ uiView: PKCanvasView, context: Context) {}
+    func updateUIView(_ uiView: PKCanvasView, context: Context) {
+        // PencilKit flips black ink to white (and adapts other colors) in dark mode.
+        uiView.overrideUserInterfaceStyle = scheme == .dark ? .dark : .light
+        if isActive {
+            if !uiView.isFirstResponder { DispatchQueue.main.async { uiView.becomeFirstResponder() } }
+        } else if uiView.isFirstResponder {
+            uiView.resignFirstResponder()
+        }
+    }
+
+    static func dismantleUIView(_ uiView: PKCanvasView, coordinator: Coordinator) {
+        coordinator.flush()
+    }
 
     final class Coordinator: NSObject, PKCanvasViewDelegate {
         var data: Binding<Data>
         let picker = PKToolPicker()
-        init(data: Binding<Data>) { self.data = data }
+        weak var canvas: PKCanvasView?
+        private var pending: DispatchWorkItem?
+        private var observer: NSObjectProtocol?
 
+        init(data: Binding<Data>) {
+            self.data = data
+            super.init()
+            observer = NotificationCenter.default.addObserver(
+                forName: UIApplication.willResignActiveNotification, object: nil, queue: .main
+            ) { [weak self] _ in MainActor.assumeIsolated { self?.flush() } }
+        }
+
+        deinit { if let observer { NotificationCenter.default.removeObserver(observer) } }
+
+        /// Serializing the whole drawing on every stroke update made the app lag, so
+        /// saves are debounced; the last change is always flushed on exit.
         func canvasViewDrawingDidChange(_ canvasView: PKCanvasView) {
-            data.wrappedValue = canvasView.drawing.dataRepresentation()
+            pending?.cancel()
+            let work = DispatchWorkItem { [weak self] in self?.flush() }
+            pending = work
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.4, execute: work)
         }
-    }
-}
 
-/// Renders a saved PKDrawing as an image, always with light-mode ink.
-struct DrawingImage: View {
-    let data: Data
-    var padding: CGFloat = 12
-
-    var body: some View {
-        if let image = Self.render(data) {
-            Image(uiImage: image).resizable().scaledToFit().padding(padding)
+        func flush() {
+            pending?.cancel()
+            pending = nil
+            guard let canvas else { return }
+            let bytes = canvas.drawing.dataRepresentation()
+            if bytes != data.wrappedValue { data.wrappedValue = bytes }
         }
-    }
-
-    static func render(_ data: Data, scale: CGFloat = 2) -> UIImage? {
-        guard !data.isEmpty,
-              let drawing = try? PKDrawing(data: data),
-              !drawing.bounds.isEmpty else { return nil }
-        var image: UIImage?
-        UITraitCollection(userInterfaceStyle: .light).performAsCurrent {
-            image = drawing.image(from: drawing.bounds, scale: scale)
-        }
-        return image
     }
 }
