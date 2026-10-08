@@ -1,8 +1,11 @@
 import SwiftUI
+import SwiftData
 
 struct CardEditor: View {
     let deck: Deck
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.modelContext) private var context
+    @State private var confirmingDelete = false
     @State private var card: Card
     @State private var showingFront = true
     @State private var angle = 0.0
@@ -31,7 +34,14 @@ struct CardEditor: View {
                         .font(.caption).foregroundStyle(.secondary)
                 }
                 Spacer()
-                Color.clear.frame(width: 80, height: 1)
+                Button(role: .destructive) { Haptics.tap(); confirmingDelete = true } label: {
+                    Label("Delete Card", systemImage: "trash").labelStyle(.iconOnly)
+                }
+                .frame(width: 80, alignment: .trailing)
+                .confirmationDialog("Delete this card?", isPresented: $confirmingDelete,
+                                titleVisibility: .visible) {
+                    Button("Delete Card", role: .destructive) { deleteCard() }
+                }
             }
             .padding(.horizontal)
 
@@ -84,6 +94,23 @@ struct CardEditor: View {
             Spacer()
         }
         .padding(.top, 24)
+    }
+
+    private func deleteCard() {
+        Haptics.warning()
+        let doomed = card
+        let all = cards
+        let neighbor = all.indices.contains(index + 1) ? all[index + 1]
+                     : (index > 0 ? all[index - 1] : nil)
+        if let neighbor {
+            card = neighbor
+            showingFront = true
+            angle = 0
+        }
+        deck.cards.removeAll { $0 === doomed }
+        context.delete(doomed)
+        deck.renumber()
+        if neighbor == nil { dismiss() }
     }
 
     private func go(to newIndex: Int) {
