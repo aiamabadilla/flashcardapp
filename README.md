@@ -9,7 +9,7 @@ An iPad flashcard app built with SwiftUI, SwiftData and PencilKit (iOS 17+, iPad
 - Previous / Next buttons and a single New Card button inside the editor, so you never have to leave it
 - Tap anywhere in the empty slot of the deck grid to add a card
 - Dark mode (System / Light / Dark) like Notes: dark paper, ink colors invert
-- Per-side lined or blank paper, and typed text on either side in a movable, scalable text box (drag the top-left handle to move, bottom-right to scale, A−/A+ for font size)
+- Per-side lined or blank paper, plus any number of typed text boxes on either side: tap a box to edit it, drag the top-left handle to move, bottom-right to scale, top-right to delete; **Add Text** adds another
 - Star cards; filter the deck to Starred and study only starred cards
 - Haptic feedback on buttons, card changes, flips and deletes
 - Thumbnails show the front with a small preview of the back

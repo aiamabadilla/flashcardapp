@@ -37,23 +37,25 @@ struct DrawingImage: View {
     }
 }
 
-/// Typed text positioned by its TextBox. The padding mirrors TextEditor's own insets
-/// so text doesn't jump when leaving edit mode.
+/// A text box placed on the card by its fractional position. The padding mirrors
+/// TextEditor's own insets so text doesn't jump when leaving edit mode.
 struct PlacedText: View {
-    let text: String
-    let box: TextBox
+    let item: TextItem
     let card: CGSize
+    var onTap: (() -> Void)? = nil
 
     var body: some View {
         ZStack(alignment: .topLeading) {
-            Text(text)
-                .font(.system(size: box.size * card.width))
+            Text(item.text)
+                .font(.system(size: item.size * card.width))
                 .padding(.horizontal, 5).padding(.vertical, 8)
-                .frame(width: box.w * card.width, alignment: .leading)
-                .offset(x: box.x * card.width, y: box.y * card.height)
+                .frame(width: item.w * card.width, alignment: .leading)
+                .contentShape(Rectangle())
+                .onTapGesture { onTap?() }
+                .offset(x: item.x * card.width, y: item.y * card.height)
         }
         .frame(width: card.width, height: card.height, alignment: .topLeading)
-        .allowsHitTesting(false)
+        .allowsHitTesting(onTap != nil)
     }
 }
 
@@ -66,14 +68,11 @@ struct CardFace: View {
     @Environment(\.colorScheme) private var scheme
 
     var body: some View {
-        let text = card.text(side)
         GeometryReader { geo in
             ZStack {
                 RoundedRectangle(cornerRadius: corner).fill(Color.paper(scheme))
                 if card.isLined(side) { CardLines() }
-                if !text.isEmpty {
-                    PlacedText(text: text, box: card.box(side), card: geo.size)
-                }
+                ForEach(card.textItems(side)) { PlacedText(item: $0, card: geo.size) }
                 DrawingImage(data: card.drawing(side), padding: inset)
             }
         }
@@ -138,35 +137,40 @@ struct ZoomingLines: View {
     var body: some View { CardLines(zoom: viewport.zoom, offset: viewport.offset) }
 }
 
-/// Typed text that tracks the canvas's zoom and pan.
-struct ZoomingText: View {
+/// Typed text boxes that track the canvas's zoom and pan. Tapping one selects it.
+struct ZoomingTexts: View {
     @ObservedObject var viewport: Viewport
-    let text: String
-    let box: TextBox
+    let items: [TextItem]
     let card: CGSize
+    let onTap: (UUID) -> Void
 
     var body: some View {
-        PlacedText(text: text, box: box, card: card)
-            .scaleEffect(viewport.zoom, anchor: .topLeading)
-            .offset(x: -viewport.offset.x, y: -viewport.offset.y)
+        ZStack(alignment: .topLeading) {
+            ForEach(items) { item in
+                PlacedText(item: item, card: card) { onTap(item.id) }
+            }
+        }
+        .frame(width: card.width, height: card.height, alignment: .topLeading)
+        .scaleEffect(viewport.zoom, anchor: .topLeading)
+        .offset(x: -viewport.offset.x, y: -viewport.offset.y)
     }
 }
 
-/// Editable, movable, scalable text box. Drag the top-left handle to move it, the
-/// bottom-right handle to scale it (box width and font size together).
+/// Editable text box. Drag the top-left handle to move it, the bottom-right handle to
+/// scale it (width and font size together), the top-right button to delete it.
 struct TextBoxEditor: View {
-    @Binding var text: String
-    @Binding var box: TextBox
+    @Binding var item: TextItem
     let card: CGSize
     var focus: FocusState<Bool>.Binding
-    @State private var start: TextBox?
+    var onDelete: () -> Void
+    @State private var start: TextItem?
 
     var body: some View {
-        let fontSize = box.size * card.width
-        let width = box.w * card.width
+        let fontSize = item.size * card.width
+        let width = item.w * card.width
 
         // The hidden Text sizes the box to its content; the editor is overlaid on it.
-        Text(text + " ")
+        Text(item.text + " ")
             .font(.system(size: fontSize))
             .padding(.horizontal, 5).padding(.vertical, 8)
             .frame(width: width, alignment: .leading)
@@ -174,46 +178,51 @@ struct TextBoxEditor: View {
             .fixedSize(horizontal: false, vertical: true)
             .opacity(0)
             .overlay {
-                TextEditor(text: $text)
+                TextEditor(text: $item.text)
                     .font(.system(size: fontSize))
                     .scrollContentBackground(.hidden)
                     .focused(focus)
             }
-        .overlay(RoundedRectangle(cornerRadius: 6)
-            .strokeBorder(Color.accentColor, style: StrokeStyle(lineWidth: 1.5, dash: [6, 4])))
-        .overlay(alignment: .topLeading) {
-            handle("arrow.up.and.down.and.arrow.left.and.right")
-                .offset(x: -18, y: -18)
-                .gesture(move)
-        }
-        .overlay(alignment: .bottomTrailing) {
-            handle("arrow.up.left.and.arrow.down.right")
-                .offset(x: 18, y: 18)
-                .gesture(resize)
-        }
-        .offset(x: box.x * card.width, y: box.y * card.height)
-        .frame(width: card.width, height: card.height, alignment: .topLeading)
-        .onAppear { focus.wrappedValue = true }
+            .overlay(RoundedRectangle(cornerRadius: 6)
+                .strokeBorder(Color.accentColor, style: StrokeStyle(lineWidth: 1.5, dash: [6, 4])))
+            .overlay(alignment: .topLeading) {
+                handle("arrow.up.and.down.and.arrow.left.and.right", .accentColor)
+                    .offset(x: -18, y: -18)
+                    .gesture(move)
+            }
+            .overlay(alignment: .bottomTrailing) {
+                handle("arrow.up.left.and.arrow.down.right", .accentColor)
+                    .offset(x: 18, y: 18)
+                    .gesture(resize)
+            }
+            .overlay(alignment: .topTrailing) {
+                handle("trash", .red)
+                    .offset(x: 18, y: -18)
+                    .onTapGesture { onDelete() }
+            }
+            .offset(x: item.x * card.width, y: item.y * card.height)
+            .frame(width: card.width, height: card.height, alignment: .topLeading)
+            .onAppear { focus.wrappedValue = true }
     }
 
-    private func handle(_ icon: String) -> some View {
+    private func handle(_ icon: String, _ color: Color) -> some View {
         Image(systemName: icon)
             .font(.system(size: 15, weight: .semibold))
             .foregroundStyle(.white)
             .frame(width: 36, height: 36)
-            .background(Circle().fill(Color.accentColor))
+            .background(Circle().fill(color))
             .contentShape(Circle())
     }
 
     private var move: some Gesture {
         DragGesture(minimumDistance: 0)
             .onChanged { drag in
-                let origin = start ?? box
+                let origin = start ?? item
                 start = origin
                 var b = origin
                 b.x = min(max(origin.x + drag.translation.width / card.width, 0), max(0, 1 - origin.w))
                 b.y = min(max(origin.y + drag.translation.height / card.height, 0), 0.92)
-                box = b
+                item = b
             }
             .onEnded { _ in start = nil }
     }
@@ -221,7 +230,7 @@ struct TextBoxEditor: View {
     private var resize: some Gesture {
         DragGesture(minimumDistance: 0)
             .onChanged { drag in
-                let origin = start ?? box
+                let origin = start ?? item
                 start = origin
                 let startWidth = origin.w * card.width
                 let newW = min(max((startWidth + drag.translation.width) / card.width, 0.1),
@@ -229,7 +238,7 @@ struct TextBoxEditor: View {
                 var b = origin
                 b.w = newW
                 b.size = origin.size * (newW / origin.w)
-                box = b
+                item = b
             }
             .onEnded { _ in start = nil }
     }

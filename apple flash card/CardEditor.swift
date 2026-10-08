@@ -9,7 +9,7 @@ struct CardEditor: View {
     @State private var card: Card
     @State private var showingFront = true
     @State private var angle = 0.0
-    @State private var typing = false
+    @State private var selectedID: UUID?
     @State private var confirmingDelete = false
     @FocusState private var textFocused: Bool
     @StateObject private var viewport = Viewport()
@@ -21,6 +21,7 @@ struct CardEditor: View {
 
     private let buttonWidth: CGFloat = 170
     private var side: Side { showingFront ? .front : .back }
+    private var typing: Bool { selectedID != nil }
 
     var body: some View {
         let editing = Bindable(card)
@@ -37,7 +38,7 @@ struct CardEditor: View {
                         Label("Smaller", systemImage: "textformat.size.smaller").frame(width: buttonWidth)
                     }
                     .buttonStyle(.bordered)
-                    Button { Haptics.tap(); toggleTyping() } label: {
+                    Button { Haptics.tap(); deselect() } label: {
                         Label("Done Typing", systemImage: "checkmark").frame(width: buttonWidth)
                     }
                     .buttonStyle(.borderedProminent)
@@ -86,8 +87,7 @@ struct CardEditor: View {
 
     private func cardArea(_ editing: Bindable<Card>) -> some View {
         let drawing = showingFront ? editing.front : editing.back
-        let text = Binding(get: { card.text(side) }, set: { card.setText($0, side) })
-        let boxBinding = Binding(get: { card.box(side) }, set: { card.setBox($0, side) })
+        let items = card.textItems(side)
 
         // The placeholder fixes the card's size; the content is overlaid so the
         // canvas's large intrinsic size can't stretch the layout.
@@ -101,23 +101,36 @@ struct CardEditor: View {
                             ZoomingLines(viewport: viewport)
                                 .clipShape(RoundedRectangle(cornerRadius: 18))
                         }
-                        if !typing, !text.wrappedValue.isEmpty {
-                            ZoomingText(viewport: viewport, text: text.wrappedValue,
-                                        box: boxBinding.wrappedValue, card: geo.size)
-                                .clipShape(RoundedRectangle(cornerRadius: 18))
-                        }
                         DrawingCanvas(data: drawing, viewport: viewport, isActive: !typing)
                             .id("\(ObjectIdentifier(card).hashValue)-\(showingFront)")
                             .clipShape(RoundedRectangle(cornerRadius: 18))
                             .allowsHitTesting(!typing)
                         if typing {
-                            TextBoxEditor(text: text, box: boxBinding, card: geo.size, focus: $textFocused)
+                            // Tapping empty card space while editing finishes the edit.
+                            Color.clear.contentShape(Rectangle()).onTapGesture { deselect() }
+                        }
+                        // Other text boxes stay tappable: tap one to edit it.
+                        ZoomingTexts(viewport: viewport,
+                                     items: items.filter { $0.id != selectedID },
+                                     card: geo.size) { select($0) }
+                            .clipShape(RoundedRectangle(cornerRadius: 18))
+                        if let id = selectedID, items.contains(where: { $0.id == id }) {
+                            TextBoxEditor(item: itemBinding(id), card: geo.size,
+                                          focus: $textFocused, onDelete: { deleteSelected() })
+                                .id(id)
                         }
                     }
                 }
             }
             .padding(.horizontal, 40)
             .rotation3DEffect(.degrees(angle), axis: (x: 0, y: 1, z: 0))
+    }
+
+    private func itemBinding(_ id: UUID) -> Binding<TextItem> {
+        Binding(
+            get: { card.textItem(id) ?? TextItem(side: side == .front ? 0 : 1) },
+            set: { card.updateTextItem($0) }
+        )
     }
 
     // MARK: Controls
@@ -150,7 +163,7 @@ struct CardEditor: View {
                 toggleButton("Lines", icon: "text.justify", on: card.isLined(side), tint: .blue) {
                     card.toggleLines(side)
                 }
-                toggleButton("Text", icon: "keyboard", on: typing, tint: .blue) { toggleTyping() }
+                toggleButton("Add Text", icon: "textbox", on: false, tint: .blue) { addText() }
                 toggleButton("Star", icon: card.isStarred ? "star.fill" : "star",
                              on: card.isStarred, tint: .yellow) {
                     card.isStarred.toggle()
@@ -182,22 +195,55 @@ struct CardEditor: View {
     // MARK: Actions
 
     private func scaleFont(_ factor: Double) {
-        var b = card.box(side)
-        b.size = min(max(b.size * factor, 0.012), 0.2)
-        card.setBox(b, side)
+        guard let id = selectedID, var item = card.textItem(id) else { return }
+        item.size = min(max(item.size * factor, 0.012), 0.2)
+        card.updateTextItem(item)
     }
 
-    private func toggleTyping() {
-        if !typing { viewport.resetCanvasZoom() }   // position the box at 1x
-        typing.toggle()
-        if !typing { textFocused = false }
+    private func addText() {
+        viewport.resetCanvasZoom()   // place new text at 1x
+        deselect()
+        let count = card.textItems(side).count
+        let item = TextItem(side: side == .front ? 0 : 1,
+                            y: min(0.05 + Double(count % 6) * 0.14, 0.8))
+        card.updateTextItem(item)
+        selectedID = item.id
+    }
+
+    private func select(_ id: UUID) {
+        Haptics.tap()
+        if selectedID != id { discardIfEmpty() }
+        viewport.resetCanvasZoom()
+        selectedID = id
+        textFocused = true
+    }
+
+    private func deselect() {
+        discardIfEmpty()
+        selectedID = nil
+        textFocused = false
+    }
+
+    private func deleteSelected() {
+        Haptics.warning()
+        if let id = selectedID { card.removeTextItem(id) }
+        selectedID = nil
+        textFocused = false
+    }
+
+    /// Text boxes left empty are removed so they don't clutter the card.
+    private func discardIfEmpty() {
+        if let id = selectedID, let item = card.textItem(id),
+           item.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            card.removeTextItem(id)
+        }
     }
 
     private func show(_ newCard: Card) {
+        deselect()
         card = newCard
         showingFront = true
         angle = 0
-        typing = false
     }
 
     private func go(to newIndex: Int) {
@@ -230,10 +276,10 @@ struct CardEditor: View {
 
     private func flip() {
         Haptics.flip()
+        deselect()
         withAnimation(.easeIn(duration: 0.18)) { angle = 90 }
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.18) {
             showingFront.toggle()
-            typing = false
             angle = -90
             withAnimation(.easeOut(duration: 0.18)) { angle = 0 }
         }
