@@ -163,14 +163,26 @@ struct TextBoxEditor: View {
     let card: CGSize
     var focus: FocusState<Bool>.Binding
     var onDelete: () -> Void
+    /// Local copy that gestures update every frame; it's written back to the card
+    /// only when a gesture ends. Saving on every touch movement made dragging stutter.
+    @State private var draft: TextItem
     @State private var start: TextItem?
 
+    init(item: Binding<TextItem>, card: CGSize, focus: FocusState<Bool>.Binding,
+         onDelete: @escaping () -> Void) {
+        _item = item
+        _draft = State(initialValue: item.wrappedValue)
+        self.card = card
+        self.focus = focus
+        self.onDelete = onDelete
+    }
+
     var body: some View {
-        let fontSize = item.size * card.width
-        let width = item.w * card.width
+        let fontSize = draft.size * card.width
+        let width = draft.w * card.width
 
         // The hidden Text sizes the box to its content; the editor is overlaid on it.
-        Text(item.text + " ")
+        Text(draft.text + " ")
             .font(.system(size: fontSize))
             .padding(.horizontal, 5).padding(.vertical, 8)
             .frame(width: width, alignment: .leading)
@@ -178,7 +190,7 @@ struct TextBoxEditor: View {
             .fixedSize(horizontal: false, vertical: true)
             .opacity(0)
             .overlay {
-                TextEditor(text: $item.text)
+                TextEditor(text: $draft.text)
                     .font(.system(size: fontSize))
                     .scrollContentBackground(.hidden)
                     .focused(focus)
@@ -200,9 +212,21 @@ struct TextBoxEditor: View {
                     .offset(x: 18, y: -18)
                     .onTapGesture { onDelete() }
             }
-            .offset(x: item.x * card.width, y: item.y * card.height)
+            .offset(x: draft.x * card.width, y: draft.y * card.height)
             .frame(width: card.width, height: card.height, alignment: .topLeading)
             .onAppear { focus.wrappedValue = true }
+            // Typing is saved as it happens...
+            .onChange(of: draft.text) {
+                if item.text != draft.text {
+                    var saved = item
+                    saved.text = draft.text
+                    item = saved
+                }
+            }
+            // ...and changes made elsewhere (A-/A+) flow back in, except mid-gesture.
+            .onChange(of: item) {
+                if start == nil, draft != item { draft = item }
+            }
     }
 
     private func handle(_ icon: String, _ color: Color) -> some View {
@@ -217,20 +241,20 @@ struct TextBoxEditor: View {
     private var move: some Gesture {
         DragGesture(minimumDistance: 0)
             .onChanged { drag in
-                let origin = start ?? item
+                let origin = start ?? draft
                 start = origin
                 var b = origin
                 b.x = min(max(origin.x + drag.translation.width / card.width, 0), max(0, 1 - origin.w))
                 b.y = min(max(origin.y + drag.translation.height / card.height, 0), 0.92)
-                item = b
+                draft = b
             }
-            .onEnded { _ in start = nil }
+            .onEnded { _ in commit() }
     }
 
     private var resize: some Gesture {
         DragGesture(minimumDistance: 0)
             .onChanged { drag in
-                let origin = start ?? item
+                let origin = start ?? draft
                 start = origin
                 let startWidth = origin.w * card.width
                 let newW = min(max((startWidth + drag.translation.width) / card.width, 0.1),
@@ -238,8 +262,13 @@ struct TextBoxEditor: View {
                 var b = origin
                 b.w = newW
                 b.size = origin.size * (newW / origin.w)
-                item = b
+                draft = b
             }
-            .onEnded { _ in start = nil }
+            .onEnded { _ in commit() }
+    }
+
+    private func commit() {
+        start = nil
+        if item != draft { item = draft }
     }
 }
