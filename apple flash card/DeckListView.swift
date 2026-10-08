@@ -15,6 +15,9 @@ struct DeckListView: View {
     @State private var exported: ExportedFile?
     @State private var showingImporter = false
     @State private var backupMessage: String?
+    @State private var query = ""
+    @State private var indexingLeft = 0
+    @State private var searchTarget: SearchTarget?
 
     var body: some View {
         NavigationStack(path: $path) {
@@ -82,6 +85,22 @@ struct DeckListView: View {
                                            description: Text("Tap + to create your first deck."))
                 }
             }
+            .searchable(text: $query, prompt: "Search cards and handwriting")
+            .overlay {
+                if !query.trimmingCharacters(in: .whitespaces).isEmpty {
+                    SearchResultsView(query: query, decks: decks, indexingLeft: indexingLeft) { hit in
+                        searchTarget = SearchTarget(deck: hit.deck, card: hit.card)
+                    }
+                    .background(Color(.systemGroupedBackground))
+                }
+            }
+            .fullScreenCover(item: $searchTarget) { CardEditor(deck: $0.deck, start: $0.card) }
+            // Read any new or changed handwriting as soon as someone searches, so results are current.
+            .task(id: query.isEmpty) {
+                guard !query.isEmpty else { return }
+                await HandwritingIndex.indexAll(in: context) { indexingLeft = $0 }
+                indexingLeft = 0
+            }
             .sheet(isPresented: $showingStats) { StatsView() }
             .sheet(isPresented: $showingTrash) { RecentlyDeletedView() }
             .sheet(item: $exported) { ShareSheet(url: $0.url) }
@@ -110,9 +129,13 @@ struct DeckListView: View {
             .task {
                 Trash.purgeExpired(in: context)   // remove anything deleted over 30 days ago
                 PhotoCleanup.run(in: context)     // then clear photo files nothing uses
+                await HandwritingIndex.indexAll(in: context)   // read new handwriting in the background
             }
             .onChange(of: scenePhase) {
-                if scenePhase == .background { PhotoCleanup.run(in: context) }
+                if scenePhase == .background {
+                    PhotoCleanup.run(in: context)
+                    Task { await HandwritingIndex.indexAll(in: context) }
+                }
             }
             .navigationTitle("Decks")
             .navigationDestination(for: Deck.self) { DeckView(deck: $0) }

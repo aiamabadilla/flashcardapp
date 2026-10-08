@@ -98,6 +98,12 @@ nonisolated struct ImageItem: Codable, Identifiable, Equatable, Sendable {
     var textItemsJSON: String = ""
     // Photos on the card (metadata only; the image files live in ImageStore).
     var imageItemsJSON: String = ""
+    // Handwriting search: text read from each side's ink, and a fingerprint of the ink it was
+    // read from (so a side is only re-read after it changes).
+    var frontInkText: String = ""
+    var backInkText: String = ""
+    var frontInkHash: String = ""
+    var backInkHash: String = ""
 
     init(order: Int) {
         self.order = order

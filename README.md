@@ -16,6 +16,8 @@ An iPad flashcard app built with SwiftUI, SwiftData and PencilKit (iOS 17+, iPad
 - Unused photo files (left by deleted cards, decks or photos) are cleaned up automatically at launch and when the app backgrounds; the Stats screen shows photo storage with a manual Clean Up button
 - Recently Deleted: deleted cards and decks are kept for 30 days and can be restored or deleted forever (individually or all at once); expired items are purged at launch. An Undo banner also appears right after deleting a card, deck, text box or photo
 - Backup and restore: Back Up All Decks (or Export Deck from a deck's long-press menu) saves a single .imstudy file via the share sheet (AirDrop, Save to Files...); Restore from Backup adds its decks as new decks. Includes ink, text, photos and study progress
+- Search (deck list): finds cards by typed text and by handwriting. Handwriting is read on-device with Apple's Vision framework in the background and cached on each card, re-read only when the ink changes
+- Duplicate a card, and Move or Copy a card to another deck (long-press a card), each with Undo
 - Haptic feedback on buttons, card changes, flips and deletes
 - Thumbnails show the front with a small preview of the back
 - Long-press a card to edit, move earlier/later, or delete

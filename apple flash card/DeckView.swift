@@ -20,6 +20,7 @@ struct DeckView: View {
     enum Filter { case all, starred }
     @State private var filter: Filter = .all
     @State private var confirmingDelete = false
+    @Query(filter: #Predicate<Deck> { $0.deletedAt == 0 }, sort: \Deck.created) private var allDecks: [Deck]
 
     // Covers are presented with wrapper items that have their own stable IDs, never
     // the model's identity: a new card's identity changes when SwiftData first saves
@@ -115,6 +116,7 @@ struct DeckView: View {
                 context.deleteDeck(deck)
             }
         }
+        .undoBanner()
         .fullScreenCover(item: $editor) { CardEditor(deck: deck, start: $0.card) }
         .fullScreenCover(item: $study) { StudyView(cards: $0.cards) }
     }
@@ -128,6 +130,29 @@ struct DeckView: View {
             Haptics.tap()
             card.isStarred.toggle()
         }
+        Button("Duplicate", systemImage: "plus.square.on.square") {
+            Haptics.success()
+            deck.duplicate(card, in: context)
+        }
+        let others = allDecks.filter { $0 !== deck }
+        Menu("Move to…", systemImage: "folder") {
+            ForEach(others) { target in
+                Button(target.displayTitle) {
+                    Haptics.success()
+                    deck.move(card, to: target, in: context)
+                }
+            }
+        }
+        .disabled(others.isEmpty)
+        Menu("Copy to…", systemImage: "doc.on.doc") {
+            ForEach(others) { target in
+                Button(target.displayTitle) {
+                    Haptics.success()
+                    deck.copy(card, to: target, in: context)
+                }
+            }
+        }
+        .disabled(others.isEmpty)
         Button("Move Earlier", systemImage: "arrow.up.left") { move(card, by: -1) }
             .disabled(index == 0)
         Button("Move Later", systemImage: "arrow.down.right") { move(card, by: 1) }
