@@ -33,12 +33,28 @@ struct DeckView: View {
     var body: some View {
         let all = deck.sortedCards
         let starred = all.filter(\.isStarred)
+        let due = deck.dueCards
         let visible = filter == .all ? all : starred
 
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
                 TextField("Deck title", text: $deck.title)
                     .font(.largeTitle.bold())
+
+                if !all.isEmpty {
+                    HStack(spacing: 10) {
+                        StatChip(value: due.count, label: "due", color: .orange)
+                        StatChip(value: deck.newCount, label: "new", color: .blue)
+                        StatChip(value: deck.masteredCount, label: "mastered", color: .green)
+                        Spacer()
+                        if !due.isEmpty {
+                            Button { startStudy(due) } label: {
+                                Label("Study Due", systemImage: "play.fill")
+                            }
+                            .buttonStyle(.borderedProminent)
+                        }
+                    }
+                }
 
                 Picker("Show", selection: $filter) {
                     Text("All Cards (\(all.count))").tag(Filter.all)
@@ -74,11 +90,15 @@ struct DeckView: View {
                 }
                 .tint(.red)
                 Menu {
+                    Button("Study Due (\(due.count))", systemImage: "clock.badge.checkmark") {
+                        startStudy(due)
+                    }
+                    .disabled(due.isEmpty)
                     Button("Study All Cards", systemImage: "rectangle.on.rectangle.angled") {
-                        startStudy(all)
+                        startStudy(all.shuffled())
                     }
                     Button("Study Starred (\(starred.count))", systemImage: "star") {
-                        startStudy(starred)
+                        startStudy(starred.shuffled())
                     }
                     .disabled(starred.isEmpty)
                 } label: {
@@ -184,5 +204,21 @@ struct CardThumbnail: View {
                         .font(.title3).padding(10)
                 }
             }
+    }
+}
+
+struct StatChip: View {
+    let value: Int
+    let label: String
+    let color: Color
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Text("\(value)").font(.headline.monospacedDigit())
+            Text(label).font(.subheadline)
+        }
+        .foregroundStyle(value > 0 ? color : .secondary)
+        .padding(.horizontal, 12).padding(.vertical, 6)
+        .background(Capsule().fill((value > 0 ? color : Color.secondary).opacity(0.15)))
     }
 }

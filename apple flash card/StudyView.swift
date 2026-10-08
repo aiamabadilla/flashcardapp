@@ -1,64 +1,110 @@
 import SwiftUI
 
-/// Shows each card's front; tap to flip to the back.
+/// A study session with spaced repetition. Flip a card, then mark whether you knew it.
+/// Cards you miss come back a few cards later until you know them; each answer is
+/// recorded on the card to schedule its next review.
 struct StudyView: View {
-    @State private var cards: [Card]
     @Environment(\.dismiss) private var dismiss
-    @State private var index = 0
+    @State private var queue: [Card]
+    private let total: Int
     @State private var showingBack = false
     @State private var angle = 0.0
+    @State private var known = 0
+    @State private var missedOnce: Set<ObjectIdentifier> = []
 
-    init(cards: [Card]) { _cards = State(initialValue: cards) }
+    init(cards: [Card]) {
+        _queue = State(initialValue: cards)
+        total = cards.count
+    }
+
+    private var current: Card? { queue.first }
+    private var firstTry: Int { total - missedOnce.count }
 
     var body: some View {
         VStack(spacing: 24) {
-            HStack {
-                Button("Done") { Haptics.tap(); dismiss() }
-                    .frame(width: 100, alignment: .leading)
-                Spacer()
-                Text(cards.isEmpty ? "" : "\(index + 1) of \(cards.count)").font(.headline)
-                Spacer()
-                Button("Shuffle", systemImage: "shuffle") { Haptics.tap(); cards.shuffle(); go(to: 0) }
-                    .frame(width: 100, alignment: .trailing)
-            }
-            .padding(.horizontal)
+            header
 
             if let card = current {
+                ProgressView(value: Double(known), total: Double(max(total, 1)))
+                    .padding(.horizontal, 40)
+
                 CardFace(card: card, side: showingBack ? .back : .front, corner: 18, inset: 24)
                     .shadow(radius: 10)
                     .padding(.horizontal, 40)
                     .rotation3DEffect(.degrees(angle), axis: (x: 0, y: 1, z: 0))
                     .onTapGesture { flip() }
 
-                Text(showingBack ? "Back — tap to flip" : "Front — tap to flip")
-                    .font(.subheadline).foregroundStyle(.secondary)
-
-                HStack(spacing: 24) {
-                    Button { go(to: index - 1) } label: {
-                        Label("Previous", systemImage: "chevron.left").frame(width: 170)
+                if showingBack {
+                    HStack(spacing: 24) {
+                        Button { answer(known: false) } label: {
+                            Label("Don't Know", systemImage: "xmark").frame(width: 200)
+                        }
+                        .tint(.red)
+                        Button { answer(known: true) } label: {
+                            Label("Know It", systemImage: "checkmark").frame(width: 200)
+                        }
+                        .tint(.green)
                     }
-                    .disabled(index == 0)
-                    Button { go(to: index + 1) } label: {
-                        Label("Next", systemImage: "chevron.right")
-                            .labelStyle(TrailingIconLabelStyle()).frame(width: 170)
-                    }
-                    .disabled(index >= cards.count - 1)
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.large)
+                } else {
+                    Text("Tap the card to reveal the answer")
+                        .font(.subheadline).foregroundStyle(.secondary)
                 }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.large)
+            } else {
+                summary
             }
             Spacer()
         }
         .padding(.top, 24)
     }
 
-    private var current: Card? { cards.indices.contains(index) ? cards[index] : nil }
+    private var header: some View {
+        HStack {
+            Button("Done") { Haptics.tap(); dismiss() }
+                .frame(width: 100, alignment: .leading)
+            Spacer()
+            Text(current == nil ? "Session Complete" : "\(known) of \(total) known")
+                .font(.headline)
+            Spacer()
+            Color.clear.frame(width: 100, height: 1)
+        }
+        .padding(.horizontal)
+    }
 
-    private func go(to newIndex: Int) {
-        guard cards.indices.contains(newIndex) else { return }
-        Haptics.select()
-        index = newIndex
+    private var summary: some View {
+        VStack(spacing: 16) {
+            Image(systemName: "checkmark.seal.fill")
+                .font(.system(size: 64)).foregroundStyle(.green)
+            Text(total == 0 ? "Nothing to review" : "All \(total) cards reviewed")
+                .font(.title2.bold())
+            if total > 0 {
+                Text("\(firstTry) right on the first try · \(missedOnce.count) needed another go")
+                    .foregroundStyle(.secondary)
+                Text("Cards you knew will come back after a longer break. Missed cards stay due.")
+                    .font(.footnote).foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center).padding(.horizontal, 60)
+            }
+            Button("Done") { Haptics.tap(); dismiss() }
+                .buttonStyle(.borderedProminent).controlSize(.large)
+        }
+        .padding(.top, 80)
+    }
+
+    private func answer(known isKnown: Bool) {
+        guard let card = current else { return }
+        card.review(known: isKnown)
+        queue.removeFirst()
+        if isKnown {
+            Haptics.success()
+            known += 1
+        } else {
+            Haptics.warning()
+            missedOnce.insert(ObjectIdentifier(card))
+            queue.insert(card, at: min(3, queue.count))   // see it again in a few cards
+        }
         showingBack = false
+        angle = 0
     }
 
     private func flip() {

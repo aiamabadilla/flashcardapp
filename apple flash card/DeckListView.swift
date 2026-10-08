@@ -14,7 +14,9 @@ struct DeckListView: View {
                     NavigationLink(value: deck) {
                         VStack(alignment: .leading, spacing: 4) {
                             Text(deck.title.isEmpty ? "Untitled Deck" : deck.title).font(.headline)
-                            Text("\(deck.cards.count) \(deck.cards.count == 1 ? "card" : "cards")")
+                            let due = deck.dueCards.count
+                            (Text("\(deck.cards.count) \(deck.cards.count == 1 ? "card" : "cards")")
+                             + (due > 0 ? Text(" · \(due) due").foregroundStyle(.orange) : Text("")))
                                 .font(.subheadline).foregroundStyle(.secondary)
                         }
                     }

@@ -14,7 +14,7 @@ An iPad flashcard app built with SwiftUI, SwiftData and PencilKit (iOS 17+, iPad
 - Haptic feedback on buttons, card changes, flips and deletes
 - Thumbnails show the front with a small preview of the back
 - Long-press a card to edit, move earlier/later, or delete
-- Study mode: tap to flip, previous/next, shuffle
+- Spaced-repetition study (Leitner boxes): flip a card, then mark Know It / Don't Know. Known cards come back after 1, 2, 4, 8 then 16 days; missed cards return a few cards later in the session and stay due. Study Due / All / Starred, with due-new-mastered counts on each deck
 - Every stroke autosaves to SwiftData
 - Rename decks inline
 

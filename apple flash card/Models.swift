@@ -29,6 +29,13 @@ nonisolated struct TextItem: Codable, Identifiable, Equatable, Sendable {
     var sortedCards: [Card] { cards.sorted { $0.order < $1.order } }
     var starredCards: [Card] { sortedCards.filter(\.isStarred) }
 
+    /// Cards due for review now: most overdue first, new cards (never reviewed) included.
+    var dueCards: [Card] {
+        cards.filter(\.isDue).sorted { ($0.dueTime, $0.order) < ($1.dueTime, $1.order) }
+    }
+    var newCount: Int { cards.filter(\.isNew).count }
+    var masteredCount: Int { cards.filter(\.isMastered).count }
+
     func newCard() -> Card {
         let card = Card(order: (cards.map(\.order).max() ?? -1) + 1)
         cards.append(card)
@@ -61,6 +68,12 @@ nonisolated struct TextItem: Codable, Identifiable, Equatable, Sendable {
     var backBoxW = 0.96
     var backBoxSize = 0.03
     var isStarred: Bool = false
+    // Spaced repetition (Leitner boxes). Plain numbers with defaults so stores migrate.
+    var leitnerBox = 0            // 0 = learning ... 5 = best known
+    var dueTime = 0.0             // seconds since 1970; 0 = never reviewed, due now
+    var reviewCount = 0
+    var correctCount = 0
+    var lastReviewed = 0.0
     // All text boxes (both sides) as JSON. A plain String keeps store migration trivial.
     var textItemsJSON: String = ""
 
@@ -75,6 +88,29 @@ nonisolated struct TextItem: Codable, Identifiable, Equatable, Sendable {
 
     func toggleLines(_ side: Side) {
         if side == .front { frontLined.toggle() } else { backLined.toggle() }
+    }
+
+    // MARK: Spaced repetition
+
+    /// Days until the next review for each Leitner box.
+    static let intervalDays: [Double] = [0, 1, 2, 4, 8, 16]
+
+    var isDue: Bool { dueTime <= Date.now.timeIntervalSince1970 }
+    var isNew: Bool { reviewCount == 0 }
+    var isMastered: Bool { leitnerBox >= 4 }
+
+    /// Records one review. Knowing a card moves it up a box (longer wait); missing it
+    /// sends it back to box 0, so it is due again right away.
+    func review(known: Bool, now: Date = .now) {
+        reviewCount += 1
+        lastReviewed = now.timeIntervalSince1970
+        if known {
+            correctCount += 1
+            leitnerBox = min(leitnerBox + 1, Card.intervalDays.count - 1)
+        } else {
+            leitnerBox = 0
+        }
+        dueTime = now.timeIntervalSince1970 + Card.intervalDays[leitnerBox] * 86_400
     }
 
     // MARK: Text boxes
