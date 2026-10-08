@@ -4,6 +4,8 @@ import SwiftData
 struct DeckView: View {
     @Bindable var deck: Deck
     @Environment(\.modelContext) private var context
+    @Environment(\.dismiss) private var dismiss
+    @State private var confirmingDelete = false
     @State private var selected: Card?
     @State private var studying = false
     private let columns = [GridItem(.flexible(), spacing: 24),
@@ -28,11 +30,23 @@ struct DeckView: View {
         }
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-            ToolbarItem(placement: .primaryAction) {
+            ToolbarItemGroup(placement: .primaryAction) {
+                Button(role: .destructive) { Haptics.tap(); confirmingDelete = true } label: {
+                    Label("Delete Deck", systemImage: "trash")
+                }
+                .tint(.red)
                 Button { Haptics.tap(); studying = true } label: {
                     Label("Study", systemImage: "rectangle.on.rectangle.angled")
                 }
                 .disabled(deck.cards.isEmpty)
+            }
+        }
+        .confirmationDialog("Delete \"\(deck.title)\" and all its cards?",
+                            isPresented: $confirmingDelete, titleVisibility: .visible) {
+            Button("Delete Deck", role: .destructive) {
+                Haptics.warning()
+                dismiss()
+                context.delete(deck)
             }
         }
         .fullScreenCover(item: $selected) { card in
