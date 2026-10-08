@@ -238,8 +238,10 @@ struct TextBoxEditor: View {
             .contentShape(Circle())
     }
 
+    // Gestures use screen coordinates: the handles move with the box, so measuring in
+    // their own coordinate space made the drag feed back on itself and jitter.
     private var move: some Gesture {
-        DragGesture(minimumDistance: 0)
+        DragGesture(minimumDistance: 0, coordinateSpace: .global)
             .onChanged { drag in
                 let origin = start ?? draft
                 start = origin
@@ -252,7 +254,7 @@ struct TextBoxEditor: View {
     }
 
     private var resize: some Gesture {
-        DragGesture(minimumDistance: 0)
+        DragGesture(minimumDistance: 0, coordinateSpace: .global)
             .onChanged { drag in
                 let origin = start ?? draft
                 start = origin
