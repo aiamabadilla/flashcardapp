@@ -27,13 +27,23 @@ struct CardEditor: View {
         let cards = deck.sortedCards
         let index = cards.firstIndex { $0 === card } ?? 0
 
-        VStack(spacing: 20) {
+        VStack(spacing: typing ? 12 : 20) {
             header(index: index, count: cards.count)
             cardArea(editing)
-            controls(index: index, count: cards.count)
-            Spacer()
+            if typing {
+                // Keep the card as large as possible above the keyboard.
+                Button { Haptics.tap(); toggleTyping() } label: {
+                    Label("Done Typing", systemImage: "checkmark").frame(width: buttonWidth * 3 + 32)
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.large)
+            } else {
+                controls(index: index, count: cards.count)
+            }
+            Spacer(minLength: 0)
         }
-        .padding(.top, 24)
+        .padding(.top, typing ? 12 : 24)
+        .animation(.easeInOut(duration: 0.2), value: typing)
     }
 
     // MARK: Header
