@@ -18,12 +18,10 @@ struct DeckView: View {
                 LazyVGrid(columns: columns, spacing: 24) {
                     ForEach(deck.sortedCards) { card in
                         CardThumbnail(card: card)
-                            .onTapGesture { selected = card }
+                            .onTapGesture { Haptics.tap(); selected = card }
                             .contextMenu { menu(for: card) }
                     }
-                    if !deck.isFull {
-                        AddCardCell { addCard() }
-                    }
+                    AddCardCell { addCard() }
                 }
             }
             .padding(32)
@@ -31,14 +29,14 @@ struct DeckView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
-                Button { studying = true } label: {
+                Button { Haptics.tap(); studying = true } label: {
                     Label("Study", systemImage: "rectangle.on.rectangle.angled")
                 }
                 .disabled(deck.cards.isEmpty)
             }
         }
         .fullScreenCover(item: $selected) { card in
-            CardEditor(card: card)
+            CardEditor(deck: deck, start: card)
         }
         .fullScreenCover(isPresented: $studying) {
             StudyView(deck: deck)
@@ -58,9 +56,8 @@ struct DeckView: View {
     }
 
     private func addCard() {
-        let card = Card(order: deck.cards.count)
-        deck.cards.append(card)
-        selected = card
+        Haptics.success()
+        selected = deck.newCard()
     }
 
     private func move(_ card: Card, by offset: Int) {
@@ -68,11 +65,13 @@ struct DeckView: View {
         guard let from = cards.firstIndex(where: { $0 === card }) else { return }
         let to = from + offset
         guard cards.indices.contains(to) else { return }
+        Haptics.select()
         cards.swapAt(from, to)
         for (i, c) in cards.enumerated() { c.order = i }
     }
 
     private func delete(_ card: Card) {
+        Haptics.warning()
         deck.cards.removeAll { $0 === card }
         context.delete(card)
         deck.renumber()

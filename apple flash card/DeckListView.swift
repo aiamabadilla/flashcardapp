@@ -13,15 +13,16 @@ struct DeckListView: View {
                     NavigationLink(value: deck) {
                         VStack(alignment: .leading, spacing: 4) {
                             Text(deck.title.isEmpty ? "Untitled Deck" : deck.title).font(.headline)
-                            Text("\(deck.cards.count) of \(Deck.maxCards) cards")
+                            Text("\(deck.cards.count) \(deck.cards.count == 1 ? "card" : "cards")")
                                 .font(.subheadline).foregroundStyle(.secondary)
                         }
                     }
                     .contextMenu {
-                        Button("Delete", systemImage: "trash", role: .destructive) { context.delete(deck) }
+                        Button("Delete", systemImage: "trash", role: .destructive) { Haptics.warning(); context.delete(deck) }
                     }
                 }
                 .onDelete { offsets in
+                    Haptics.warning()
                     for i in offsets { context.delete(decks[i]) }
                 }
             }
@@ -43,6 +44,7 @@ struct DeckListView: View {
 
     private func newDeck() {
         let deck = Deck()
+        Haptics.success()
         context.insert(deck)
         path.append(deck)
     }

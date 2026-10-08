@@ -12,11 +12,11 @@ struct StudyView: View {
     var body: some View {
         VStack(spacing: 24) {
             HStack {
-                Button("Done") { dismiss() }
+                Button("Done") { Haptics.tap(); dismiss() }
                 Spacer()
                 Text(cards.isEmpty ? "" : "\(index + 1) of \(cards.count)").font(.headline)
                 Spacer()
-                Button("Shuffle", systemImage: "shuffle") { cards.shuffle(); go(to: 0) }
+                Button("Shuffle", systemImage: "shuffle") { Haptics.tap(); cards.shuffle(); go(to: 0) }
             }
             .padding(.horizontal)
 
@@ -35,9 +35,9 @@ struct StudyView: View {
                     .font(.subheadline).foregroundStyle(.secondary)
 
                 HStack(spacing: 24) {
-                    Button { go(to: index - 1) } label: { Label("Previous", systemImage: "chevron.left") }
+                    Button { go(to: index - 1) } label: { Label("Previous", systemImage: "chevron.left").frame(width: 170) }
                         .disabled(index == 0)
-                    Button { go(to: index + 1) } label: { Label("Next", systemImage: "chevron.right") }
+                    Button { go(to: index + 1) } label: { Label("Next", systemImage: "chevron.right").labelStyle(TrailingIconLabelStyle()).frame(width: 170) }
                         .disabled(index >= cards.count - 1)
                 }
                 .buttonStyle(.borderedProminent)
@@ -53,11 +53,13 @@ struct StudyView: View {
 
     private func go(to newIndex: Int) {
         guard cards.indices.contains(newIndex) else { return }
+        Haptics.select()
         index = newIndex
         showingBack = false
     }
 
     private func flip() {
+        Haptics.flip()
         withAnimation(.easeIn(duration: 0.18)) { angle = 90 }
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.18) {
             showingBack.toggle()

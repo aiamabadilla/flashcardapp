@@ -11,12 +11,15 @@ import Foundation
         self.created = .now
     }
 
-    static let maxCards = 12
-
     var sortedCards: [Card] { cards.sorted { $0.order < $1.order } }
-    var isFull: Bool { cards.count >= Deck.maxCards }
 
     /// Re-numbers cards 0...n-1 so ordering stays contiguous after deletes and moves.
+    func newCard() -> Card {
+        let card = Card(order: (cards.map(\.order).max() ?? -1) + 1)
+        cards.append(card)
+        return card
+    }
+
     func renumber() {
         for (index, card) in sortedCards.enumerated() { card.order = index }
     }
