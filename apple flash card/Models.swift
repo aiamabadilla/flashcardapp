@@ -55,7 +55,9 @@ nonisolated struct ImageItem: Codable, Identifiable, Equatable, Sendable {
     var masteredCount: Int { liveCards.filter(\.isMastered).count }
 
     func newCard() -> Card {
-        let card = Card(order: (liveCards.map(\.order).max() ?? -1) + 1)
+        // New cards go first, right after the add tile, so existing cards shift along.
+        for other in liveCards { other.order += 1 }
+        let card = Card(order: 0)
         cards.append(card)
         return card
     }
