@@ -65,13 +65,14 @@ struct DeckView: View {
                 .onChange(of: filter) { Haptics.select() }
 
                 LazyVGrid(columns: columns, spacing: 24) {
+                    if filter == .all {
+                        // New Card tile sits first so it's always in the top-left, however many cards there are.
+                        AddCardCell { addCard() }
+                    }
                     ForEach(visible) { card in
                         CardThumbnail(card: card)
                             .onTapGesture { Haptics.tap(); open(card) }
                             .contextMenu { menu(for: card, in: all) }
-                    }
-                    if filter == .all {
-                        AddCardCell { addCard() }
                     }
                 }
 
