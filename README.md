@@ -13,6 +13,7 @@ An iPad flashcard app built with SwiftUI, SwiftData and PencilKit (iOS 17+, iPad
 - Star cards; filter the deck to Starred and study only starred cards
 - Streak counter (flame banner on the deck list and in the session summary) and a Stats screen: current/best streak, reviewed today, due now, accuracy, study time, a 7-day chart and a new/learning/reviewing/mastered breakdown
 - Photos on cards: Add Photo from your library, then move, scale or delete; draw over them with the Pencil. Finger-tap a photo to select it
+- Unused photo files (left by deleted cards, decks or photos) are cleaned up automatically at launch and when the app backgrounds; the Stats screen shows photo storage with a manual Clean Up button
 - Undo banner after deleting a card, deck, text box or photo
 - Haptic feedback on buttons, card changes, flips and deletes
 - Thumbnails show the front with a small preview of the back

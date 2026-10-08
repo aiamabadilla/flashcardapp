@@ -35,6 +35,8 @@ struct StatsView: View {
     @Environment(\.dismiss) private var dismiss
     @ObservedObject private var log = StudyLog.shared
     @Query private var cards: [Card]
+    @Environment(\.modelContext) private var context
+    @State private var storageVersion = 0   // refreshes the storage numbers after a clean-up
 
     private let columns = [GridItem(.adaptive(minimum: 200), spacing: 16)]
 
@@ -63,6 +65,7 @@ struct StatsView: View {
 
                     section("Last 7 days") { weekChart }
                     section("Your cards") { masteryChart }
+                    section("Photo storage") { storage }
                 }
                 .padding(24)
             }
@@ -124,6 +127,39 @@ struct StatsView: View {
                 }
             }
         }
+    }
+
+    // MARK: Storage
+
+    private var storage: some View {
+        _ = storageVersion   // re-evaluate after a clean-up
+        let files = ImageStore.storedFiles()
+        let orphans = PhotoCleanup.unused(in: context)
+        let total = files.reduce(0) { $0 + $1.bytes }
+        let wasted = orphans.reduce(0) { $0 + $1.bytes }
+        return VStack(alignment: .leading, spacing: 12) {
+            Text("\(plural(files.count, "photo")) · \(bytes(total))")
+            if orphans.isEmpty {
+                Label("Nothing to clean up", systemImage: "checkmark.circle.fill")
+                    .foregroundStyle(.green)
+            } else {
+                Text("\(plural(orphans.count, "unused photo")) taking up \(bytes(wasted)) " +
+                     "(left over from deleted cards or photos)")
+                    .foregroundStyle(.secondary)
+                Button {
+                    Haptics.success()
+                    PhotoCleanup.run(in: context, force: true)
+                    storageVersion += 1
+                } label: {
+                    Label("Clean Up", systemImage: "sparkles")
+                }
+                .buttonStyle(.borderedProminent)
+            }
+        }
+    }
+
+    private func bytes(_ n: Int) -> String {
+        ByteCountFormatter.string(fromByteCount: Int64(n), countStyle: .file)
     }
 
     // MARK: Helpers

@@ -3,6 +3,7 @@ import SwiftData
 
 struct DeckListView: View {
     @Environment(\.modelContext) private var context
+    @Environment(\.scenePhase) private var scenePhase
     @Query(sort: \Deck.created) private var decks: [Deck]
     @State private var path: [Deck] = []
     @State private var pendingDelete: Deck?
@@ -54,6 +55,10 @@ struct DeckListView: View {
             }
             .sheet(isPresented: $showingStats) { StatsView() }
             .undoBanner()
+            .task { PhotoCleanup.run(in: context) }   // clear photo files left behind by deletes
+            .onChange(of: scenePhase) {
+                if scenePhase == .background { PhotoCleanup.run(in: context) }
+            }
             .navigationTitle("Decks")
             .navigationDestination(for: Deck.self) { DeckView(deck: $0) }
             .toolbar {

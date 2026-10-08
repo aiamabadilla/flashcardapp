@@ -35,6 +35,23 @@ enum ImageStore {
         return (name, Double(size.height / max(size.width, 1)))
     }
 
+    /// Every stored photo file with its size in bytes.
+    static func storedFiles() -> [(name: String, bytes: Int)] {
+        let urls = (try? FileManager.default.contentsOfDirectory(
+            at: directory, includingPropertiesForKeys: [.fileSizeKey])) ?? []
+        return urls.map { url in
+            let size = (try? url.resourceValues(forKeys: [.fileSizeKey]))?.fileSize ?? 0
+            return (url.lastPathComponent, size)
+        }
+    }
+
+    static func delete(_ names: [String]) {
+        for name in names {
+            try? FileManager.default.removeItem(at: directory.appendingPathComponent(name))
+            cache.removeObject(forKey: name as NSString)
+        }
+    }
+
     static func image(_ file: String) -> UIImage? {
         if let hit = cache.object(forKey: file as NSString) { return hit }
         guard let image = UIImage(contentsOfFile: directory.appendingPathComponent(file).path) else { return nil }
