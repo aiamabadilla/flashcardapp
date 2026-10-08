@@ -12,6 +12,7 @@ struct CardEditor: View {
     @State private var typing = false
     @State private var confirmingDelete = false
     @FocusState private var textFocused: Bool
+    @StateObject private var viewport = Viewport()
 
     init(deck: Deck, start: Card) {
         self.deck = deck
@@ -77,15 +78,16 @@ struct CardEditor: View {
                     let pad = geo.size.width * 0.025
                     ZStack {
                         RoundedRectangle(cornerRadius: 18).fill(Color.paper(scheme)).shadow(radius: 10)
-                        if card.isLined(side) { CardLines() }
-                        if !typing, !text.wrappedValue.isEmpty {
-                            Text(text.wrappedValue)
-                                .font(.system(size: fontSize))
-                                .padding(pad)
-                                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                                .allowsHitTesting(false)
+                        if card.isLined(side) {
+                            ZoomingLines(viewport: viewport)
+                                .clipShape(RoundedRectangle(cornerRadius: 18))
                         }
-                        DrawingCanvas(data: drawing, isActive: !typing)
+                        if !typing, !text.wrappedValue.isEmpty {
+                            ZoomingText(viewport: viewport, text: text.wrappedValue,
+                                        fontSize: fontSize, padding: pad)
+                                .clipShape(RoundedRectangle(cornerRadius: 18))
+                        }
+                        DrawingCanvas(data: drawing, viewport: viewport, isActive: !typing)
                             .id("\(ObjectIdentifier(card).hashValue)-\(showingFront)")
                             .clipShape(RoundedRectangle(cornerRadius: 18))
                             .allowsHitTesting(!typing)

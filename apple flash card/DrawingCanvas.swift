@@ -3,11 +3,12 @@ import PencilKit
 
 struct DrawingCanvas: UIViewRepresentable {
     @Binding var data: Data
+    var viewport: Viewport? = nil
     /// False while typing, so the keyboard and the tool picker don't fight.
     var isActive = true
     @Environment(\.colorScheme) private var scheme
 
-    func makeCoordinator() -> Coordinator { Coordinator(data: $data) }
+    func makeCoordinator() -> Coordinator { Coordinator(data: $data, viewport: viewport) }
 
     func makeUIView(context: Context) -> PKCanvasView {
         let canvas = PKCanvasView()
@@ -18,11 +19,13 @@ struct DrawingCanvas: UIViewRepresentable {
         #endif
         canvas.backgroundColor = .clear
         canvas.isOpaque = false
+        canvas.contentInsetAdjustmentBehavior = .never
         canvas.minimumZoomScale = 1
         canvas.maximumZoomScale = 5
         canvas.delegate = context.coordinator
         canvas.drawing = (try? PKDrawing(data: data)) ?? PKDrawing()
         context.coordinator.canvas = canvas
+        DispatchQueue.main.async { viewport?.reset() }
 
         DispatchQueue.main.async {
             let picker = context.coordinator.picker
@@ -51,15 +54,26 @@ struct DrawingCanvas: UIViewRepresentable {
         var data: Binding<Data>
         let picker = PKToolPicker()
         weak var canvas: PKCanvasView?
+        let viewport: Viewport?
         private var pending: DispatchWorkItem?
         private var observer: NSObjectProtocol?
 
-        init(data: Binding<Data>) {
+        init(data: Binding<Data>, viewport: Viewport?) {
             self.data = data
+            self.viewport = viewport
             super.init()
             observer = NotificationCenter.default.addObserver(
                 forName: UIApplication.willResignActiveNotification, object: nil, queue: .main
             ) { [weak self] _ in MainActor.assumeIsolated { self?.flush() } }
+        }
+
+        func scrollViewDidScroll(_ scrollView: UIScrollView) { report(scrollView) }
+        func scrollViewDidZoom(_ scrollView: UIScrollView) { report(scrollView) }
+
+        private func report(_ scrollView: UIScrollView) {
+            guard let viewport else { return }
+            viewport.zoom = scrollView.zoomScale
+            viewport.offset = scrollView.contentOffset
         }
 
         deinit { if let observer { NotificationCenter.default.removeObserver(observer) } }
