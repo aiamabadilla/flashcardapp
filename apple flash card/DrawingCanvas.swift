@@ -25,6 +25,7 @@ struct DrawingCanvas: UIViewRepresentable {
         canvas.delegate = context.coordinator
         canvas.drawing = (try? PKDrawing(data: data)) ?? PKDrawing()
         context.coordinator.canvas = canvas
+        viewport?.scrollView = canvas
         DispatchQueue.main.async { viewport?.reset() }
 
         DispatchQueue.main.async {

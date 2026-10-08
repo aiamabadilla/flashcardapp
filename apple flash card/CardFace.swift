@@ -37,6 +37,26 @@ struct DrawingImage: View {
     }
 }
 
+/// Typed text positioned by its TextBox. The padding mirrors TextEditor's own insets
+/// so text doesn't jump when leaving edit mode.
+struct PlacedText: View {
+    let text: String
+    let box: TextBox
+    let card: CGSize
+
+    var body: some View {
+        ZStack(alignment: .topLeading) {
+            Text(text)
+                .font(.system(size: box.size * card.width))
+                .padding(.horizontal, 5).padding(.vertical, 8)
+                .frame(width: box.w * card.width, alignment: .leading)
+                .offset(x: box.x * card.width, y: box.y * card.height)
+        }
+        .frame(width: card.width, height: card.height, alignment: .topLeading)
+        .allowsHitTesting(false)
+    }
+}
+
 /// Read-only view of one side of a card: paper, optional lines, typed text, ink.
 struct CardFace: View {
     let card: Card
@@ -52,10 +72,7 @@ struct CardFace: View {
                 RoundedRectangle(cornerRadius: corner).fill(Color.paper(scheme))
                 if card.isLined(side) { CardLines() }
                 if !text.isEmpty {
-                    Text(text)
-                        .font(.system(size: geo.size.width * 0.03))
-                        .padding(geo.size.width * 0.025)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                    PlacedText(text: text, box: card.box(side), card: geo.size)
                 }
                 DrawingImage(data: card.drawing(side), padding: inset)
             }
@@ -68,6 +85,14 @@ struct CardFace: View {
 @MainActor final class Viewport: ObservableObject {
     @Published var zoom: CGFloat = 1
     @Published var offset: CGPoint = .zero
+    weak var scrollView: UIScrollView?
+
+    /// Back to 1x without animation (used before positioning the text box).
+    func resetCanvasZoom() {
+        scrollView?.setZoomScale(1, animated: false)
+        scrollView?.setContentOffset(.zero, animated: false)
+        reset()
+    }
 
     func reset() {
         if zoom != 1 { zoom = 1 }
@@ -117,16 +142,95 @@ struct ZoomingLines: View {
 struct ZoomingText: View {
     @ObservedObject var viewport: Viewport
     let text: String
-    let fontSize: CGFloat
-    let padding: CGFloat
+    let box: TextBox
+    let card: CGSize
 
     var body: some View {
-        Text(text)
-            .font(.system(size: fontSize))
-            .padding(padding)
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        PlacedText(text: text, box: box, card: card)
             .scaleEffect(viewport.zoom, anchor: .topLeading)
             .offset(x: -viewport.offset.x, y: -viewport.offset.y)
-            .allowsHitTesting(false)
+    }
+}
+
+/// Editable, movable, scalable text box. Drag the top-left handle to move it, the
+/// bottom-right handle to scale it (box width and font size together).
+struct TextBoxEditor: View {
+    @Binding var text: String
+    @Binding var box: TextBox
+    let card: CGSize
+    var focus: FocusState<Bool>.Binding
+    @State private var start: TextBox?
+
+    var body: some View {
+        let fontSize = box.size * card.width
+        let width = box.w * card.width
+
+        // The hidden Text sizes the box to its content; the editor is overlaid on it.
+        Text(text + " ")
+            .font(.system(size: fontSize))
+            .padding(.horizontal, 5).padding(.vertical, 8)
+            .frame(width: width, alignment: .leading)
+            .frame(minHeight: fontSize * 2.2, alignment: .topLeading)
+            .fixedSize(horizontal: false, vertical: true)
+            .opacity(0)
+            .overlay {
+                TextEditor(text: $text)
+                    .font(.system(size: fontSize))
+                    .scrollContentBackground(.hidden)
+                    .focused(focus)
+            }
+        .overlay(RoundedRectangle(cornerRadius: 6)
+            .strokeBorder(Color.accentColor, style: StrokeStyle(lineWidth: 1.5, dash: [6, 4])))
+        .overlay(alignment: .topLeading) {
+            handle("arrow.up.and.down.and.arrow.left.and.right")
+                .offset(x: -18, y: -18)
+                .gesture(move)
+        }
+        .overlay(alignment: .bottomTrailing) {
+            handle("arrow.up.left.and.arrow.down.right")
+                .offset(x: 18, y: 18)
+                .gesture(resize)
+        }
+        .offset(x: box.x * card.width, y: box.y * card.height)
+        .frame(width: card.width, height: card.height, alignment: .topLeading)
+        .onAppear { focus.wrappedValue = true }
+    }
+
+    private func handle(_ icon: String) -> some View {
+        Image(systemName: icon)
+            .font(.system(size: 15, weight: .semibold))
+            .foregroundStyle(.white)
+            .frame(width: 36, height: 36)
+            .background(Circle().fill(Color.accentColor))
+            .contentShape(Circle())
+    }
+
+    private var move: some Gesture {
+        DragGesture(minimumDistance: 0)
+            .onChanged { drag in
+                let origin = start ?? box
+                start = origin
+                var b = origin
+                b.x = min(max(origin.x + drag.translation.width / card.width, 0), max(0, 1 - origin.w))
+                b.y = min(max(origin.y + drag.translation.height / card.height, 0), 0.92)
+                box = b
+            }
+            .onEnded { _ in start = nil }
+    }
+
+    private var resize: some Gesture {
+        DragGesture(minimumDistance: 0)
+            .onChanged { drag in
+                let origin = start ?? box
+                start = origin
+                let startWidth = origin.w * card.width
+                let newW = min(max((startWidth + drag.translation.width) / card.width, 0.1),
+                               max(0.1, 1 - origin.x))
+                var b = origin
+                b.w = newW
+                b.size = origin.size * (newW / origin.w)
+                box = b
+            }
+            .onEnded { _ in start = nil }
     }
 }

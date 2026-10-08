@@ -32,10 +32,20 @@ struct CardEditor: View {
             cardArea(editing)
             if typing {
                 // Keep the card as large as possible above the keyboard.
-                Button { Haptics.tap(); toggleTyping() } label: {
-                    Label("Done Typing", systemImage: "checkmark").frame(width: buttonWidth * 3 + 32)
+                HStack(spacing: 16) {
+                    Button { Haptics.tap(); scaleFont(0.9) } label: {
+                        Label("Smaller", systemImage: "textformat.size.smaller").frame(width: buttonWidth)
+                    }
+                    .buttonStyle(.bordered)
+                    Button { Haptics.tap(); toggleTyping() } label: {
+                        Label("Done Typing", systemImage: "checkmark").frame(width: buttonWidth)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    Button { Haptics.tap(); scaleFont(1.1) } label: {
+                        Label("Larger", systemImage: "textformat.size.larger").frame(width: buttonWidth)
+                    }
+                    .buttonStyle(.bordered)
                 }
-                .buttonStyle(.borderedProminent)
                 .controlSize(.large)
             } else {
                 controls(index: index, count: cards.count)
@@ -77,6 +87,7 @@ struct CardEditor: View {
     private func cardArea(_ editing: Bindable<Card>) -> some View {
         let drawing = showingFront ? editing.front : editing.back
         let text = Binding(get: { card.text(side) }, set: { card.setText($0, side) })
+        let boxBinding = Binding(get: { card.box(side) }, set: { card.setBox($0, side) })
 
         // The placeholder fixes the card's size; the content is overlaid so the
         // canvas's large intrinsic size can't stretch the layout.
@@ -84,8 +95,6 @@ struct CardEditor: View {
             .aspectRatio(5.0 / 3.0, contentMode: .fit)
             .overlay {
                 GeometryReader { geo in
-                    let fontSize = geo.size.width * 0.03
-                    let pad = geo.size.width * 0.025
                     ZStack {
                         RoundedRectangle(cornerRadius: 18).fill(Color.paper(scheme)).shadow(radius: 10)
                         if card.isLined(side) {
@@ -94,7 +103,7 @@ struct CardEditor: View {
                         }
                         if !typing, !text.wrappedValue.isEmpty {
                             ZoomingText(viewport: viewport, text: text.wrappedValue,
-                                        fontSize: fontSize, padding: pad)
+                                        box: boxBinding.wrappedValue, card: geo.size)
                                 .clipShape(RoundedRectangle(cornerRadius: 18))
                         }
                         DrawingCanvas(data: drawing, viewport: viewport, isActive: !typing)
@@ -102,12 +111,7 @@ struct CardEditor: View {
                             .clipShape(RoundedRectangle(cornerRadius: 18))
                             .allowsHitTesting(!typing)
                         if typing {
-                            TextEditor(text: text)
-                                .font(.system(size: fontSize))
-                                .scrollContentBackground(.hidden)
-                                .focused($textFocused)
-                                .onAppear { textFocused = true }
-                                .padding(pad - 5)
+                            TextBoxEditor(text: text, box: boxBinding, card: geo.size, focus: $textFocused)
                         }
                     }
                 }
@@ -177,7 +181,14 @@ struct CardEditor: View {
 
     // MARK: Actions
 
+    private func scaleFont(_ factor: Double) {
+        var b = card.box(side)
+        b.size = min(max(b.size * factor, 0.012), 0.2)
+        card.setBox(b, side)
+    }
+
     private func toggleTyping() {
+        if !typing { viewport.resetCanvasZoom() }   // position the box at 1x
         typing.toggle()
         if !typing { textFocused = false }
     }
