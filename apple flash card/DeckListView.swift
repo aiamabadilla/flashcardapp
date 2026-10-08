@@ -29,15 +29,32 @@ struct DeckListView: View {
                         }
                     }
                     .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                        Button(role: .destructive) {
+                        // Not role: .destructive. That makes iOS start collapsing the row as if
+                        // it were already deleted, then snap it back while we ask to confirm.
+                        Button {
                             Haptics.tap()
                             pendingDelete = deck
                         } label: {
                             Label("Delete", systemImage: "trash").labelStyle(.iconOnly)
                         }
+                        .tint(.red)
                     }
                     .contextMenu {
                         Button("Delete", systemImage: "trash", role: .destructive) { pendingDelete = deck }
+                    }
+                    // Attached to the row (not the whole screen) so the popup points at this deck.
+                    .confirmationDialog(
+                        "Move \"\(deck.title)\" and its cards to Recently Deleted?",
+                        isPresented: Binding(
+                            get: { pendingDelete === deck },
+                            set: { if !$0, pendingDelete === deck { pendingDelete = nil } }),
+                        titleVisibility: .visible
+                    ) {
+                        Button("Delete Deck", role: .destructive) {
+                            Haptics.warning()
+                            pendingDelete = nil
+                            withAnimation { context.deleteDeck(deck) }
+                        }
                     }
                 }
 
@@ -56,15 +73,6 @@ struct DeckListView: View {
                 if decks.isEmpty {
                     ContentUnavailableView("No Decks", systemImage: "rectangle.stack",
                                            description: Text("Tap + to create your first deck."))
-                }
-            }
-            .confirmationDialog("Move \"\(pendingDelete?.title ?? "")\" and its cards to Recently Deleted?",
-                                isPresented: Binding(get: { pendingDelete != nil },
-                                                     set: { if !$0 { pendingDelete = nil } }),
-                                titleVisibility: .visible) {
-                Button("Delete Deck", role: .destructive) {
-                    if let deck = pendingDelete { Haptics.warning(); context.deleteDeck(deck) }
-                    pendingDelete = nil
                 }
             }
             .sheet(isPresented: $showingStats) { StatsView() }
