@@ -6,10 +6,14 @@ struct DeckListView: View {
     @Query(sort: \Deck.created) private var decks: [Deck]
     @State private var path: [Deck] = []
     @State private var pendingDelete: Deck?
+    @State private var showingStats = false
 
     var body: some View {
         NavigationStack(path: $path) {
             List {
+                Button { Haptics.tap(); showingStats = true } label: { StreakBanner() }
+                    .buttonStyle(.plain)
+
                 ForEach(decks) { deck in
                     NavigationLink(value: deck) {
                         VStack(alignment: .leading, spacing: 4) {
@@ -48,10 +52,14 @@ struct DeckListView: View {
                     pendingDelete = nil
                 }
             }
+            .sheet(isPresented: $showingStats) { StatsView() }
             .navigationTitle("Decks")
             .navigationDestination(for: Deck.self) { DeckView(deck: $0) }
             .toolbar {
                 ToolbarItemGroup(placement: .primaryAction) {
+                    Button { Haptics.tap(); showingStats = true } label: {
+                        Label("Stats", systemImage: "chart.bar.xaxis")
+                    }
                     AppearanceMenu()
                     Button { newDeck() } label: { Label("New Deck", systemImage: "plus") }
                 }

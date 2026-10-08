@@ -11,6 +11,8 @@ struct StudyView: View {
     @State private var angle = 0.0
     @State private var known = 0
     @State private var missedOnce: Set<ObjectIdentifier> = []
+    @State private var shownAt = Date()
+    @ObservedObject private var log = StudyLog.shared
 
     init(cards: [Card]) {
         _queue = State(initialValue: cards)
@@ -76,11 +78,13 @@ struct StudyView: View {
         VStack(spacing: 16) {
             Image(systemName: "checkmark.seal.fill")
                 .font(.system(size: 64)).foregroundStyle(.green)
-            Text(total == 0 ? "Nothing to review" : "All \(total) cards reviewed")
+            Text(total == 0 ? "Nothing to review" : (total == 1 ? "1 card reviewed" : "All \(total) cards reviewed"))
                 .font(.title2.bold())
             if total > 0 {
                 Text("\(firstTry) right on the first try · \(missedOnce.count) needed another go")
                     .foregroundStyle(.secondary)
+                Label("\(plural(log.currentStreak, "day")) streak", systemImage: "flame.fill")
+                    .font(.title3.bold()).foregroundStyle(.orange)
                 Text("Cards you knew will come back after a longer break. Missed cards stay due.")
                     .font(.footnote).foregroundStyle(.secondary)
                     .multilineTextAlignment(.center).padding(.horizontal, 60)
@@ -94,6 +98,9 @@ struct StudyView: View {
     private func answer(known isKnown: Bool) {
         guard let card = current else { return }
         card.review(known: isKnown)
+        // Time on the card, capped so leaving the app open doesn't inflate study time.
+        log.record(known: isKnown, seconds: min(Date().timeIntervalSince(shownAt), 60))
+        shownAt = Date()
         queue.removeFirst()
         if isKnown {
             Haptics.success()
