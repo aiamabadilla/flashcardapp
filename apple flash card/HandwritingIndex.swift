@@ -10,40 +10,80 @@ import CryptoKit
 enum HandwritingIndex {
     private static let emptyMarker = "empty"
 
-    /// A short, stable fingerprint of a drawing's bytes.
+    /// Bump when the reading method improves, so cards are read again with the new method.
+    private static let methodVersion = "v2"
+
+    /// A short, stable fingerprint of a drawing's bytes (and of the reading method).
     static func fingerprint(_ data: Data) -> String {
         guard !data.isEmpty else { return emptyMarker }
-        return SHA256.hash(data: data).prefix(8).map { String(format: "%02x", $0) }.joined()
+        let digest = SHA256.hash(data: data).prefix(8).map { String(format: "%02x", $0) }.joined()
+        return "\(methodVersion)-\(digest)"
+    }
+
+    /// How a drawing is prepared for reading. Real handwriting is thin and small compared to
+    /// what text recognition expects, so strokes are thickened, drawn large and padded.
+    private nonisolated struct Pass {
+        let thicknessDivisor: CGFloat   // minimum stroke width = writing height / this
+        let targetSide: CGFloat         // longest side of the image, in pixels
+        let paddingFactor: CGFloat      // blank border, as a multiple of the writing height
+    }
+
+    // Two passes: the second is a fallback for words the first misses. Results are combined,
+    // which suits search (a word found by either pass counts).
+    private nonisolated static let passes = [Pass(thicknessDivisor: 12, targetSide: 2000, paddingFactor: 1.5),
+                                 Pass(thicknessDivisor: 10, targetSide: 1600, paddingFactor: 1.0)]
+
+    /// The same strokes with a minimum width, drawn in plain black.
+    private nonisolated static func thickened(_ drawing: PKDrawing, minimumWidth: CGFloat) -> PKDrawing {
+        let strokes = drawing.strokes.map { stroke -> PKStroke in
+            let points = stroke.path.map { p in
+                let w = max(p.size.width, minimumWidth)
+                return PKStrokePoint(location: p.location, timeOffset: p.timeOffset,
+                                     size: CGSize(width: w, height: w), opacity: 1,
+                                     force: p.force, azimuth: p.azimuth, altitude: p.altitude)
+            }
+            return PKStroke(ink: PKInk(.pen, color: .black),
+                            path: PKStrokePath(controlPoints: points, creationDate: stroke.path.creationDate))
+        }
+        return PKDrawing(strokes: strokes)
+    }
+
+    private nonisolated static func read(_ drawing: PKDrawing, pass: Pass) -> String {
+        let height = max(drawing.bounds.height, 1)
+        let long = max(drawing.bounds.width, height)
+        let scale = min(max(pass.targetSide / long, 1), 8)
+        let source = thickened(drawing, minimumWidth: max(1.5, height / pass.thicknessDivisor))
+        let bounds = source.bounds.insetBy(dx: -max(24, height * pass.paddingFactor),
+                                           dy: -max(24, height * pass.paddingFactor))
+
+        // Vision reads dark text on a light background, so draw the ink on white.
+        var ink: UIImage?
+        UITraitCollection(userInterfaceStyle: .light).performAsCurrent {
+            ink = source.image(from: bounds, scale: scale)
+        }
+        guard let ink else { return "" }
+        let format = UIGraphicsImageRendererFormat.default()
+        format.scale = 1
+        let flattened = UIGraphicsImageRenderer(size: ink.size, format: format).image { ctx in
+            UIColor.white.setFill()
+            ctx.fill(CGRect(origin: .zero, size: ink.size))
+            ink.draw(at: .zero)
+        }
+        guard let cgImage = flattened.cgImage else { return "" }
+
+        let request = VNRecognizeTextRequest()
+        request.recognitionLevel = .accurate
+        request.usesLanguageCorrection = true
+        request.recognitionLanguages = ["en-US"]
+        try? VNImageRequestHandler(cgImage: cgImage).perform([request])
+        return (request.results ?? []).compactMap { $0.topCandidates(1).first?.string }.joined(separator: " ")
     }
 
     /// Reads the text in a saved drawing. Runs off the main thread.
     static func recognize(_ data: Data) async -> String {
         await Task.detached(priority: .utility) {
             guard let drawing = try? PKDrawing(data: data), !drawing.bounds.isEmpty else { return "" }
-            let bounds = drawing.bounds.insetBy(dx: -24, dy: -24)
-
-            // Vision reads dark text on a light background, so draw the ink on white.
-            var ink: UIImage?
-            UITraitCollection(userInterfaceStyle: .light).performAsCurrent {
-                ink = drawing.image(from: bounds, scale: 2)
-            }
-            guard let ink else { return "" }
-            let format = UIGraphicsImageRendererFormat.default()
-            format.scale = 1
-            let flattened = UIGraphicsImageRenderer(size: ink.size, format: format).image { ctx in
-                UIColor.white.setFill()
-                ctx.fill(CGRect(origin: .zero, size: ink.size))
-                ink.draw(at: .zero)
-            }
-            guard let cgImage = flattened.cgImage else { return "" }
-
-            let request = VNRecognizeTextRequest()
-            request.recognitionLevel = .accurate
-            request.usesLanguageCorrection = true
-            request.recognitionLanguages = ["en-US"]
-            try? VNImageRequestHandler(cgImage: cgImage).perform([request])
-            let lines = (request.results ?? []).compactMap { $0.topCandidates(1).first?.string }
-            return lines.joined(separator: " ")
+            return passes.map { read(drawing, pass: $0) }.joined(separator: " ")
         }.value
     }
 
