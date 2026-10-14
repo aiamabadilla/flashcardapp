@@ -29,3 +29,19 @@ An iPad flashcard app built with SwiftUI, SwiftData and PencilKit (iOS 17+, iPad
 ## Not included
 iCloud/CloudKit sync needs a paid developer account and the iCloud capability; add a CloudKit
 configuration to the model container once that is set up.
+
+## Two versions: Published and Private
+
+The project builds two separate apps from the same source, so they install side by side and keep
+separate decks.
+
+| | Scheme | Name | Bundle ID | Icon |
+|---|---|---|---|---|
+| Published | `IMSTUDY` | IMSTUDY | `com.devaiam.imstudy` | `AppIcon` (designed) |
+| Private | `IMSTUDY Private` | IMSTUDY Private | `com.devaiam.imstudy.private` | `AppIconPrivate` (photo) |
+
+- Pick the scheme at the top of Xcode to run or archive that version.
+- Only the **IMSTUDY** scheme is submitted to TestFlight / the App Store.
+- Both targets share the folder `apple flash card/`; anything you add there appears in both.
+  To make something Private-only, wrap it in `#if PRIVATE_BUILD` (the Private target defines it).
+- To move decks from one version to the other: Back Up All Decks in one, Restore from Backup in the other.
