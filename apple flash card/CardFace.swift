@@ -50,6 +50,14 @@ struct DrawingImage: View {
     }
 }
 
+/// Size of the round move / scale / delete handles on text, photos and ink. Large enough to hit
+/// reliably with a fingertip or the Pencil.
+enum HandleStyle {
+    static let size: CGFloat = 64
+    static let icon: CGFloat = 28
+    static var inset: CGFloat { size / 2 }
+}
+
 /// A text box placed on the card by its fractional position. The padding mirrors
 /// TextEditor's own insets so text doesn't jump when leaving edit mode.
 struct PlacedText: View {
@@ -216,17 +224,17 @@ struct TextBoxEditor: View {
                 .strokeBorder(Color.accentColor, style: StrokeStyle(lineWidth: 1.5, dash: [6, 4])))
             .overlay(alignment: .topLeading) {
                 handle("arrow.up.and.down.and.arrow.left.and.right", .accentColor)
-                    .offset(x: -18, y: -18)
+                    .offset(x: -HandleStyle.inset, y: -HandleStyle.inset)
                     .gesture(move)
             }
             .overlay(alignment: .bottomTrailing) {
                 handle("arrow.up.left.and.arrow.down.right", .accentColor)
-                    .offset(x: 18, y: 18)
+                    .offset(x: HandleStyle.inset, y: HandleStyle.inset)
                     .gesture(resize)
             }
             .overlay(alignment: .topTrailing) {
                 handle("trash", .red)
-                    .offset(x: 18, y: -18)
+                    .offset(x: HandleStyle.inset, y: -HandleStyle.inset)
                     .onTapGesture { onDelete() }
             }
             .offset(x: draft.x * card.width, y: draft.y * card.height)
@@ -248,9 +256,9 @@ struct TextBoxEditor: View {
 
     private func handle(_ icon: String, _ color: Color) -> some View {
         Image(systemName: icon)
-            .font(.system(size: 15, weight: .semibold))
+            .font(.system(size: HandleStyle.icon, weight: .semibold))
             .foregroundStyle(.white)
-            .frame(width: 36, height: 36)
+            .frame(width: HandleStyle.size, height: HandleStyle.size)
             .background(Circle().fill(color))
             .contentShape(Circle())
     }
@@ -313,10 +321,10 @@ struct InkBoxEditor: View {
             .overlay(RoundedRectangle(cornerRadius: 4)
                 .strokeBorder(Color.accentColor, style: StrokeStyle(lineWidth: 1.5, dash: [6, 4])))
             .overlay(alignment: .topLeading) {
-                handle("arrow.up.and.down.and.arrow.left.and.right").offset(x: -18, y: -18).gesture(move)
+                handle("arrow.up.and.down.and.arrow.left.and.right").offset(x: -HandleStyle.inset, y: -HandleStyle.inset).gesture(move)
             }
             .overlay(alignment: .bottomTrailing) {
-                handle("arrow.up.left.and.arrow.down.right").offset(x: 18, y: 18).gesture(resize)
+                handle("arrow.up.left.and.arrow.down.right").offset(x: HandleStyle.inset, y: HandleStyle.inset).gesture(resize)
             }
             .offset(x: bounds.minX + offset.width, y: bounds.minY + offset.height)
             .frame(width: card.width, height: card.height, alignment: .topLeading)
@@ -324,9 +332,9 @@ struct InkBoxEditor: View {
 
     private func handle(_ icon: String) -> some View {
         Image(systemName: icon)
-            .font(.system(size: 15, weight: .semibold))
+            .font(.system(size: HandleStyle.icon, weight: .semibold))
             .foregroundStyle(.white)
-            .frame(width: 36, height: 36)
+            .frame(width: HandleStyle.size, height: HandleStyle.size)
             .background(Circle().fill(Color.accentColor))
             .contentShape(Circle())
     }

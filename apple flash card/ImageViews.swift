@@ -149,14 +149,14 @@ struct ImageBoxEditor: View {
                         .strokeBorder(Color.accentColor, style: StrokeStyle(lineWidth: 1.5, dash: [6, 4])))
                     .overlay(alignment: .topLeading) {
                         handle("arrow.up.and.down.and.arrow.left.and.right", .accentColor)
-                            .offset(x: -18, y: -18).gesture(move)
+                            .offset(x: -HandleStyle.inset, y: -HandleStyle.inset).gesture(move)
                     }
                     .overlay(alignment: .bottomTrailing) {
                         handle("arrow.up.left.and.arrow.down.right", .accentColor)
-                            .offset(x: 18, y: 18).gesture(resize)
+                            .offset(x: HandleStyle.inset, y: HandleStyle.inset).gesture(resize)
                     }
                     .overlay(alignment: .topTrailing) {
-                        handle("trash", .red).offset(x: 18, y: -18).onTapGesture { onDelete() }
+                        handle("trash", .red).offset(x: HandleStyle.inset, y: -HandleStyle.inset).onTapGesture { onDelete() }
                     }
                     .offset(x: item.x * card.width, y: item.y * card.height)
                     .frame(width: card.width, height: card.height, alignment: .topLeading)
@@ -166,9 +166,9 @@ struct ImageBoxEditor: View {
 
     private func handle(_ icon: String, _ color: Color) -> some View {
         Image(systemName: icon)
-            .font(.system(size: 15, weight: .semibold))
+            .font(.system(size: HandleStyle.icon, weight: .semibold))
             .foregroundStyle(.white)
-            .frame(width: 36, height: 36)
+            .frame(width: HandleStyle.size, height: HandleStyle.size)
             .background(Circle().fill(color))
             .contentShape(Circle())
     }
