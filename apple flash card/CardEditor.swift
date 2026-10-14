@@ -17,6 +17,7 @@ struct CardEditor: View {
     @State private var confirmingDelete = false
     @FocusState private var textFocused: Bool
     @State private var landscape = false
+    @State private var widthTask: Task<Void, Never>?
     // Moving/scaling the side's ink as a whole (handwriting and highlights).
     @State private var inkEditing = false
     @State private var inkScale: CGFloat = 1
@@ -349,12 +350,39 @@ struct CardEditor: View {
     /// The canvas currently showing this side's ink.
     private var liveCanvas: PKCanvasView? { viewport.scrollView as? PKCanvasView }
 
+    /// Keeps the ink tied to the card, whatever size the card is drawn at (portrait,
+    /// landscape, keyboard up). Ink is stored in card points, so when the card's width
+    /// changes it is scaled by the same factor and the width is recorded for previews.
     private func recordWidth(_ width: CGFloat) {
-        // Landscape cards are narrower; ink is always stored in the portrait card's units, so
-        // only record while the card is its normal size.
-        guard width > 100, !landscape else { return }
-        Card.lastKnownCardWidth = width
-        if abs(card.inkRefWidth - width) > 0.5 { card.inkRefWidth = width }
+        guard width > 100 else { return }
+        widthTask?.cancel()
+        widthTask = Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(250))   // let the layout settle
+            guard !Task.isCancelled, !inkEditing else { return }
+            Card.lastKnownCardWidth = width
+            let ref = card.inkRefWidth
+            guard ref > 0 else { card.inkRefWidth = width; return }
+            guard abs(ref - width) > 0.5 else { return }
+
+            let k = width / ref
+            let scale = CGAffineTransform(scaleX: k, y: k)
+            func scaled(_ data: Data) -> Data {
+                guard !data.isEmpty, let drawing = try? PKDrawing(data: data) else { return data }
+                let strokes = drawing.strokes.map { stroke -> PKStroke in
+                    var s = stroke
+                    s.transform = stroke.transform.concatenating(scale)
+                    return s
+                }
+                return PKDrawing(strokes: strokes).dataRepresentation()
+            }
+            card.front = scaled(card.front)
+            card.back = scaled(card.back)
+            // The canvas holds its own copy of the visible side; update it too.
+            if let canvas = liveCanvas {
+                canvas.drawing = (try? PKDrawing(data: showingFront ? card.front : card.back)) ?? PKDrawing()
+            }
+            card.inkRefWidth = width
+        }
     }
 
     private func startInkEditing() {
