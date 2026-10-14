@@ -19,6 +19,8 @@ struct CardEditor: View {
     @State private var confirmingDelete = false
     @FocusState private var textFocused: Bool
     @State private var landscape = false
+    /// Bumped when the card moves or resizes, so the canvas is rebuilt and re-measures its position.
+    @State private var canvasEpoch = 0
     @State private var widthTask: Task<Void, Never>?
     // Moving/scaling the side's ink as a whole (handwriting and highlights).
     @State private var inkEditing = false
@@ -35,6 +37,8 @@ struct CardEditor: View {
     private let buttonWidth: CGFloat = 170
     private var side: Side { showingFront ? .front : .back }
     /// True while a text box or photo is selected for editing.
+    /// Changes whenever the layout switches between its normal and keyboard-friendly arrangement.
+    private var collapseKey: Bool { landscape && selectedID != nil }
     private var typing: Bool { selectedID != nil || selectedImageID != nil || inkEditing }
 
     var body: some View {
@@ -44,7 +48,11 @@ struct CardEditor: View {
 
         // In portrait the button area keeps its size while editing, so the card (and the photo
         // or text on it) never jumps. In landscape the keyboard needs the room, so it collapses.
-        let steady = !landscape
+        // Only a typed text box needs the room (for the keyboard), and only in landscape. Photos and
+        // ink never need it, so the card must not move for them: a card that shifts under the
+        // canvas can leave PencilKit's idea of where it sits out of date, offsetting the pen.
+        let collapse = landscape && selectedID != nil
+        let steady = !collapse
 
         VStack(spacing: steady ? 20 : (typing ? 12 : 20)) {
             header(index: index, count: cards.count)
@@ -77,6 +85,7 @@ struct CardEditor: View {
             // Layer or other changes made elsewhere: keep the draft in step.
             if let id = selectedImageID, imageDraft.start == nil { imageDraft.item = card.imageItem(id) }
         }
+        .onChange(of: collapseKey) { canvasEpoch += 1 }
         .onChange(of: selectedImageID) {
             imageDraft.item = selectedImageID.flatMap { card.imageItem($0) }
             imageDraft.start = nil
@@ -205,7 +214,7 @@ struct CardEditor: View {
                         DrawingCanvas(data: drawing, viewport: viewport,
                                       onTap: { selectPhoto(at: $0, in: images, card: geo.size) },
                                       isActive: !typing)
-                            .id("\(ObjectIdentifier(card).hashValue)-\(showingFront)")
+                            .id("\(ObjectIdentifier(card).hashValue)-\(showingFront)-\(canvasEpoch)")
                             // Fixed internal size, scaled to the card, so ink scales with it.
                             .frame(width: logicalWidth(for: geo.size), height: logicalWidth(for: geo.size) * 0.6)
                             .scaleEffect(geo.size.width / logicalWidth(for: geo.size), anchor: .topLeading)
