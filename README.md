@@ -12,6 +12,7 @@ An iPad flashcard app built with SwiftUI, SwiftData and PencilKit (iOS 17+, iPad
 - Per-side lined or blank paper, plus any number of typed text boxes on either side: tap a box to edit it, drag the top-left handle to move, bottom-right to scale, top-right to delete; **Add Text** adds another
 - Star cards; filter the deck to Starred and study only starred cards
 - Streak counter (flame banner on the deck list and in the session summary) and a Stats screen: current/best streak, reviewed today, due now, accuracy, study time, a 7-day chart and a new/learning/reviewing/mastered breakdown
+- Move Ink: select everything drawn on a side (handwriting and highlights) and move or scale it with a box and handles, like a photo
 - Photos on cards: Add Photo from your library, then move, scale or delete; draw over them with the Pencil. Finger-tap a photo to select it
 - Unused photo files (left by deleted cards, decks or photos) are cleaned up automatically at launch and when the app backgrounds; the Stats screen shows photo storage with a manual Clean Up button
 - Recently Deleted: deleted cards and decks are kept for 30 days and can be restored or deleted forever (individually or all at once); expired items are purged at launch. An Undo banner also appears right after deleting a card, deck, text box or photo

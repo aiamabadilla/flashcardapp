@@ -100,6 +100,15 @@ nonisolated struct ImageItem: Codable, Identifiable, Equatable, Sendable {
     var textItemsJSON: String = ""
     // Photos on the card (metadata only; the image files live in ImageStore).
     var imageItemsJSON: String = ""
+    // Width of the editor card the ink was drawn on (points). Lets thumbnails and Study draw
+    // the ink at its true position and size. 0 = not recorded yet.
+    var inkRefWidth: Double = 0
+
+    /// The editor card width seen most recently; stands in for cards whose width wasn't recorded.
+    static var lastKnownCardWidth: Double {
+        get { UserDefaults.standard.double(forKey: "lastCardWidth") }
+        set { UserDefaults.standard.set(newValue, forKey: "lastCardWidth") }
+    }
     // Handwriting search: text read from each side's ink, and a fingerprint of the ink it was
     // read from (so a side is only re-read after it changes).
     var frontInkText: String = ""

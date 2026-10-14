@@ -1,6 +1,7 @@
 import SwiftUI
 import SwiftData
 import PhotosUI
+import PencilKit
 
 struct CardEditor: View {
     let deck: Deck
@@ -16,6 +17,11 @@ struct CardEditor: View {
     @State private var confirmingDelete = false
     @FocusState private var textFocused: Bool
     @State private var landscape = false
+    // Moving/scaling the side's ink as a whole (handwriting and highlights).
+    @State private var inkEditing = false
+    @State private var inkScale: CGFloat = 1
+    @State private var inkOffset: CGSize = .zero
+    @State private var inkBounds: CGRect = .zero
     @StateObject private var viewport = Viewport()
 
     init(deck: Deck, start: Card) {
@@ -26,7 +32,7 @@ struct CardEditor: View {
     private let buttonWidth: CGFloat = 170
     private var side: Side { showingFront ? .front : .back }
     /// True while a text box or photo is selected for editing.
-    private var typing: Bool { selectedID != nil || selectedImageID != nil }
+    private var typing: Bool { selectedID != nil || selectedImageID != nil || inkEditing }
 
     var body: some View {
         let editing = Bindable(card)
@@ -139,6 +145,9 @@ struct CardEditor: View {
             .overlay {
                 GeometryReader { geo in
                     ZStack {
+                        // Record how wide this card is, so previews can place the ink exactly.
+                        Color.clear.onAppear { recordWidth(geo.size.width) }
+                            .onChange(of: geo.size.width) { recordWidth(geo.size.width) }
                         RoundedRectangle(cornerRadius: 18).fill(Color.paper(scheme)).shadow(radius: 10)
                         if card.isLined(side) {
                             ZoomingLines(viewport: viewport)
@@ -153,6 +162,11 @@ struct CardEditor: View {
                                       onTap: { selectPhoto(at: $0, in: images, card: geo.size) },
                                       isActive: !typing)
                             .id("\(ObjectIdentifier(card).hashValue)-\(showingFront)")
+                            // While moving ink, preview the change on the canvas itself.
+                            .scaleEffect(inkEditing ? inkScale : 1,
+                                         anchor: UnitPoint(x: inkBounds.minX / max(geo.size.width, 1),
+                                                           y: inkBounds.minY / max(geo.size.height, 1)))
+                            .offset(inkEditing ? inkOffset : .zero)
                             .clipShape(RoundedRectangle(cornerRadius: 18))
                             .allowsHitTesting(!typing)
                         if typing {
@@ -164,6 +178,9 @@ struct CardEditor: View {
                                      items: items.filter { $0.id != selectedID },
                                      card: geo.size) { select($0) }
                             .clipShape(RoundedRectangle(cornerRadius: 18))
+                        if inkEditing {
+                            InkBoxEditor(bounds: inkBounds, card: geo.size, scale: $inkScale, offset: $inkOffset)
+                        }
                         if let id = selectedImageID, images.contains(where: { $0.id == id }) {
                             ImageBoxEditor(item: imageBinding(id), card: geo.size,
                                            onDelete: { deleteSelectedImage() })
@@ -222,24 +239,25 @@ struct CardEditor: View {
 
             // Row 2: per-card options (lines and typed text apply to the side shown)
             HStack(spacing: 16) {
-                toggleButton("Lines", icon: "text.justify", on: card.isLined(side), tint: .blue) {
+                toggleButton("Lines", icon: "text.justify", on: card.isLined(side), tint: .blue, width: 140) {
                     card.toggleLines(side)
                 }
-                toggleButton("Add Text", icon: "textbox", on: false, tint: .blue) { addText() }
+                toggleButton("Add Text", icon: "textbox", on: false, tint: .blue, width: 140) { addText() }
                 PhotosPicker(selection: $photoSelection, matching: .images) {
-                    Label("Add Photo", systemImage: "photo").frame(width: buttonWidth)
+                    Label("Add Photo", systemImage: "photo").frame(width: 140)
                 }
                 .buttonStyle(.bordered)
                 .tint(.gray)
+                toggleButton("Move Ink", icon: "scribble", on: false, tint: .blue, width: 140) { startInkEditing() }
                 toggleButton("Star", icon: card.isStarred ? "star.fill" : "star",
-                             on: card.isStarred, tint: .yellow) {
+                             on: card.isStarred, tint: .yellow, width: 140) {
                     card.isStarred.toggle()
                 }
             }
 
             // Row 3: add the next card
             Button { addCard() } label: {
-                Label("New Card", systemImage: "plus").frame(width: buttonWidth * 4 + 48)
+                Label("New Card", systemImage: "plus").frame(width: 140 * 5 + 64)
             }
             .buttonStyle(.borderedProminent)
             .tint(.green)
@@ -248,12 +266,12 @@ struct CardEditor: View {
     }
 
     private func toggleButton(_ title: String, icon: String, on: Bool, tint: Color,
-                              action: @escaping () -> Void) -> some View {
+                              width: CGFloat? = nil, action: @escaping () -> Void) -> some View {
         Button {
             Haptics.tap()
             action()
         } label: {
-            Label(title, systemImage: icon).frame(width: buttonWidth)
+            Label(title, systemImage: icon).frame(width: width ?? buttonWidth)
         }
         .buttonStyle(.bordered)
         .tint(on ? tint : .gray)
@@ -328,7 +346,58 @@ struct CardEditor: View {
         textFocused = true
     }
 
+    /// The canvas currently showing this side's ink.
+    private var liveCanvas: PKCanvasView? { viewport.scrollView as? PKCanvasView }
+
+    private func recordWidth(_ width: CGFloat) {
+        // Landscape cards are narrower; ink is always stored in the portrait card's units, so
+        // only record while the card is its normal size.
+        guard width > 100, !landscape else { return }
+        Card.lastKnownCardWidth = width
+        if abs(card.inkRefWidth - width) > 0.5 { card.inkRefWidth = width }
+    }
+
+    private func startInkEditing() {
+        guard let canvas = liveCanvas, !canvas.drawing.bounds.isEmpty else { return }
+        deselect()
+        viewport.resetCanvasZoom()
+        inkBounds = canvas.drawing.bounds
+        inkScale = 1
+        inkOffset = .zero
+        inkEditing = true
+    }
+
+    /// Applies the previewed move/scale to the ink for real and saves it.
+    private func commitInk() {
+        defer {
+            inkEditing = false
+            inkScale = 1
+            inkOffset = .zero
+        }
+        guard inkScale != 1 || inkOffset != .zero, let canvas = liveCanvas else { return }
+        let o = inkBounds.origin
+        // Scale about the box's top-left corner, then shift.
+        let transform = CGAffineTransform(translationX: o.x + inkOffset.width, y: o.y + inkOffset.height)
+            .scaledBy(x: inkScale, y: inkScale)
+            .translatedBy(x: -o.x, y: -o.y)
+        let moved = scaledWithStrokeWidth(canvas.drawing, transform: transform, scale: inkScale)
+        canvas.drawing = moved
+        let data = moved.dataRepresentation()
+        if showingFront { card.front = data } else { card.back = data }
+    }
+
+    /// Transforms the drawing; stroke thickness follows the scale so writing keeps its look.
+    private func scaledWithStrokeWidth(_ drawing: PKDrawing, transform: CGAffineTransform,
+                                       scale: CGFloat) -> PKDrawing {
+        PKDrawing(strokes: drawing.strokes.map { stroke in
+            var s = stroke
+            s.transform = stroke.transform.concatenating(transform)
+            return s
+        })
+    }
+
     private func deselect() {
+        if inkEditing { commitInk() }
         discardIfEmpty()
         selectedID = nil
         selectedImageID = nil

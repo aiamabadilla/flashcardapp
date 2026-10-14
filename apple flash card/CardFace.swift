@@ -11,14 +11,19 @@ enum InkRenderer {
         return c
     }()
 
-    static func image(_ data: Data, dark: Bool, scale: CGFloat = 2) -> UIImage? {
+    /// The ink as an image. With a reference width it covers the whole card area (so ink is at
+    /// its true position and size); without one it is cropped to the ink and fitted.
+    static func image(_ data: Data, dark: Bool, refWidth: Double = 0, scale: CGFloat = 2) -> UIImage? {
         guard !data.isEmpty else { return nil }
-        let key = "\(data.count)-\(data.hashValue)-\(dark)-\(scale)" as NSString
+        let key = "\(data.count)-\(data.hashValue)-\(dark)-\(refWidth)-\(scale)" as NSString
         if let hit = cache.object(forKey: key) { return hit }
         guard let drawing = try? PKDrawing(data: data), !drawing.bounds.isEmpty else { return nil }
+        let rect = refWidth > 0
+            ? CGRect(x: 0, y: 0, width: refWidth, height: refWidth * 3 / 5)
+            : drawing.bounds
         var image: UIImage?
         UITraitCollection(userInterfaceStyle: dark ? .dark : .light).performAsCurrent {
-            image = drawing.image(from: drawing.bounds, scale: scale)
+            image = drawing.image(from: rect, scale: scale)
         }
         if let image { cache.setObject(image, forKey: key) }
         return image
@@ -27,12 +32,20 @@ enum InkRenderer {
 
 struct DrawingImage: View {
     let data: Data
+    var refWidth: Double = 0
     var padding: CGFloat = 12
     @Environment(\.colorScheme) private var scheme
 
     var body: some View {
-        if let image = InkRenderer.image(data, dark: scheme == .dark) {
-            Image(uiImage: image).resizable().scaledToFit().padding(padding)
+        // Scale so the small previews stay sharp: about 1000 px across the card.
+        let scale = refWidth > 0 ? max(1, min(1000 / refWidth, 3)) : 2
+        if let image = InkRenderer.image(data, dark: scheme == .dark, refWidth: refWidth, scale: scale) {
+            if refWidth > 0 {
+                // Covers the face exactly, so ink lines up with photos and text.
+                Image(uiImage: image).resizable()
+            } else {
+                Image(uiImage: image).resizable().scaledToFit().padding(padding)
+            }
         }
     }
 }
@@ -74,7 +87,7 @@ struct CardFace: View {
                 if card.isLined(side) { CardLines() }
                 ForEach(card.imageItems(side)) { PlacedImage(item: $0, card: geo.size) }
                 ForEach(card.textItems(side)) { PlacedText(item: $0, card: geo.size) }
-                DrawingImage(data: card.drawing(side), padding: inset)
+                DrawingImage(data: card.drawing(side), refWidth: card.inkRefWidth > 0 ? card.inkRefWidth : Card.lastKnownCardWidth, padding: inset)
             }
         }
         .aspectRatio(5.0 / 3.0, contentMode: .fit)
@@ -273,5 +286,68 @@ struct TextBoxEditor: View {
     private func commit() {
         start = nil
         if item != draft { item = draft }
+    }
+}
+
+/// A box around everything drawn on a side, with handles to move or scale it, like a photo.
+/// Top-left handle moves, bottom-right scales (keeping proportions). The ink itself is
+/// transformed once, when editing finishes; until then the box only previews the change.
+struct InkBoxEditor: View {
+    /// The ink's bounds in card coordinates, as they were when editing began.
+    let bounds: CGRect
+    let card: CGSize
+    @Binding var scale: CGFloat
+    @Binding var offset: CGSize
+    @State private var startScale: CGFloat?
+    @State private var startOffset: CGSize?
+
+    var body: some View {
+        let w = bounds.width * scale
+        let h = bounds.height * scale
+
+        Color.clear
+            .frame(width: w, height: h)
+            .overlay(RoundedRectangle(cornerRadius: 4)
+                .strokeBorder(Color.accentColor, style: StrokeStyle(lineWidth: 1.5, dash: [6, 4])))
+            .overlay(alignment: .topLeading) {
+                handle("arrow.up.and.down.and.arrow.left.and.right").offset(x: -18, y: -18).gesture(move)
+            }
+            .overlay(alignment: .bottomTrailing) {
+                handle("arrow.up.left.and.arrow.down.right").offset(x: 18, y: 18).gesture(resize)
+            }
+            .offset(x: bounds.minX + offset.width, y: bounds.minY + offset.height)
+            .frame(width: card.width, height: card.height, alignment: .topLeading)
+    }
+
+    private func handle(_ icon: String) -> some View {
+        Image(systemName: icon)
+            .font(.system(size: 15, weight: .semibold))
+            .foregroundStyle(.white)
+            .frame(width: 36, height: 36)
+            .background(Circle().fill(Color.accentColor))
+            .contentShape(Circle())
+    }
+
+    // Screen coordinates, as for photos: the handles move with the box.
+    private var move: some Gesture {
+        DragGesture(minimumDistance: 0, coordinateSpace: .global)
+            .onChanged { drag in
+                let origin = startOffset ?? offset
+                startOffset = origin
+                offset = CGSize(width: origin.width + drag.translation.width,
+                                height: origin.height + drag.translation.height)
+            }
+            .onEnded { _ in startOffset = nil }
+    }
+
+    private var resize: some Gesture {
+        DragGesture(minimumDistance: 0, coordinateSpace: .global)
+            .onChanged { drag in
+                let origin = startScale ?? scale
+                startScale = origin
+                let width = bounds.width * origin + drag.translation.width
+                scale = min(max(width / max(bounds.width, 1), 0.15), 6)
+            }
+            .onEnded { _ in startScale = nil }
     }
 }
