@@ -13,6 +13,7 @@ struct CardEditor: View {
     @State private var angle = 0.0
     @State private var selectedID: UUID?
     @State private var selectedImageID: UUID?
+    @StateObject private var imageDraft = ImageDraft()
     @State private var photoSelection: PhotosPickerItem?
     @State private var confirmingDelete = false
     @FocusState private var textFocused: Bool
@@ -71,6 +72,10 @@ struct CardEditor: View {
         })
         .animation(steady ? nil : .easeInOut(duration: 0.2), value: typing)
         .undoBanner(bottom: 150)
+        .onChange(of: selectedImageID) {
+            imageDraft.item = selectedImageID.flatMap { card.imageItem($0) }
+            imageDraft.start = nil
+        }
         .onChange(of: photoSelection) {
             guard let picked = photoSelection else { return }
             photoSelection = nil
@@ -80,8 +85,23 @@ struct CardEditor: View {
 
     /// Shown instead of the normal buttons while a text box or photo is selected.
     @ViewBuilder private var editingControls: some View {
-        if selectedID == nil {
-            // A photo is selected: just a way to finish.
+        if selectedID == nil && selectedImageID != nil {
+            // A photo is selected: opacity (to line it up with writing) and a way to finish.
+            VStack(spacing: 16) {
+                HStack(spacing: 14) {
+                    Image(systemName: "circle.lefthalf.filled").foregroundStyle(.secondary)
+                    Slider(value: opacityBinding, in: 0.1...1)
+                    Text("\(Int(((imageDraft.item?.opacity ?? 1) * 100).rounded()))%")
+                        .monospacedDigit().foregroundStyle(.secondary).frame(width: 52, alignment: .trailing)
+                }
+                .frame(width: buttonWidth * 3 + 32)
+                Button { Haptics.tap(); deselect() } label: {
+                    Label("Done", systemImage: "checkmark").frame(width: buttonWidth * 3 + 32)
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.large)
+            }
+        } else if selectedID == nil {
             Button { Haptics.tap(); deselect() } label: {
                 Label("Done", systemImage: "checkmark").frame(width: buttonWidth * 3 + 32)
             }
@@ -104,6 +124,18 @@ struct CardEditor: View {
             }
             .controlSize(.large)
         }
+    }
+
+    /// Opacity of the selected photo; saved to the card as the slider moves.
+    private var opacityBinding: Binding<Double> {
+        Binding(
+            get: { imageDraft.item?.opacity ?? 1 },
+            set: { value in
+                guard var item = imageDraft.item else { return }
+                item.opacity = value
+                imageDraft.item = item
+                card.updateImageItem(item)
+            })
     }
 
     // MARK: Header
@@ -159,6 +191,11 @@ struct CardEditor: View {
                                       items: images.filter { $0.id != selectedImageID },
                                       card: geo.size)
                             .clipShape(RoundedRectangle(cornerRadius: 18))
+                        // The photo being edited is drawn here, under the writing and text.
+                        if selectedImageID != nil {
+                            ImageBoxEditor(draft: imageDraft, part: .picture, card: geo.size)
+                                .clipShape(RoundedRectangle(cornerRadius: 18))
+                        }
                         DrawingCanvas(data: drawing, viewport: viewport,
                                       onTap: { selectPhoto(at: $0, in: images, card: geo.size) },
                                       isActive: !typing)
@@ -186,10 +223,10 @@ struct CardEditor: View {
                         if inkEditing {
                             InkBoxEditor(bounds: inkBounds, card: geo.size, scale: $inkScale, offset: $inkOffset)
                         }
-                        if let id = selectedImageID, images.contains(where: { $0.id == id }) {
-                            ImageBoxEditor(item: imageBinding(id), card: geo.size,
+                        if selectedImageID != nil {
+                            ImageBoxEditor(draft: imageDraft, part: .handles, card: geo.size,
+                                           onCommit: { card.updateImageItem($0) },
                                            onDelete: { deleteSelectedImage() })
-                                .id(id)
                         }
                         if let id = selectedID, items.contains(where: { $0.id == id }) {
                             TextBoxEditor(item: itemBinding(id), card: geo.size,
@@ -201,13 +238,6 @@ struct CardEditor: View {
             }
             .padding(.horizontal, 40)
             .rotation3DEffect(.degrees(angle), axis: (x: 0, y: 1, z: 0))
-    }
-
-    private func imageBinding(_ id: UUID) -> Binding<ImageItem> {
-        Binding(
-            get: { card.imageItem(id) ?? ImageItem(side: 0, file: "", aspect: 1) },
-            set: { card.updateImageItem($0) }
-        )
     }
 
     private func itemBinding(_ id: UUID) -> Binding<TextItem> {

@@ -26,6 +26,8 @@ nonisolated struct ImageItem: Codable, Identifiable, Equatable, Sendable {
     var x = 0.3
     var y = 0.2
     var w = 0.4
+    /// 0.1...1. Optional so photos saved before this existed decode as fully opaque.
+    var opacity: Double?
 }
 
 @Model final class Deck {

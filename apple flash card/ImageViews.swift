@@ -1,4 +1,5 @@
 import SwiftUI
+import Combine
 import UIKit
 
 /// Stores card photos as files (they are too big for the card database, which only
@@ -85,6 +86,7 @@ struct PlacedImage: View {
                     .resizable()
                     .frame(width: width, height: width * item.aspect)
                     .clipShape(RoundedRectangle(cornerRadius: 6))
+                    .opacity(item.opacity ?? 1)
                     .offset(x: item.x * card.width, y: item.y * card.height)
             }
         }
@@ -109,29 +111,33 @@ struct ZoomingImages: View {
     }
 }
 
-/// A selected photo with handles: top-left moves it, bottom-right scales it (keeping its
-/// proportions), top-right deletes it.
-struct ImageBoxEditor: View {
-    @Binding var item: ImageItem
-    let card: CGSize
-    var onDelete: () -> Void
-    /// Updated every frame by gestures; written back only when a gesture ends.
-    @State private var draft: ImageItem
-    @State private var start: ImageItem?
+/// The photo being edited. Shared by the picture layer (drawn under the ink and text) and the
+/// handles layer (drawn on top), so gestures update both without touching the saved card.
+@MainActor final class ImageDraft: ObservableObject {
+    @Published var item: ImageItem?
+    var start: ImageItem?
+}
 
-    init(item: Binding<ImageItem>, card: CGSize, onDelete: @escaping () -> Void) {
-        _item = item
-        _draft = State(initialValue: item.wrappedValue)
-        self.card = card
-        self.onDelete = onDelete
-    }
+/// A selected photo, in two parts: the picture sits under the writing and text so they stay
+/// visible (and can be lined up with it), the handles sit on top. Top-left moves, bottom-right
+/// scales (keeping proportions), top-right deletes.
+struct ImageBoxEditor: View {
+    enum Part { case picture, handles }
+
+    @ObservedObject var draft: ImageDraft
+    let part: Part
+    let card: CGSize
+    var onCommit: (ImageItem) -> Void = { _ in }
+    var onDelete: () -> Void = {}
 
     var body: some View {
-        let width = draft.w * card.width
-        let height = width * draft.aspect
-
-        PlacedImage(item: draft, card: card)
-            .overlay(alignment: .topLeading) {
+        if let item = draft.item {
+            switch part {
+            case .picture:
+                PlacedImage(item: item, card: card)
+            case .handles:
+                let width = item.w * card.width
+                let height = width * item.aspect
                 Color.clear
                     .frame(width: width, height: height)
                     .overlay(RoundedRectangle(cornerRadius: 6)
@@ -147,9 +153,10 @@ struct ImageBoxEditor: View {
                     .overlay(alignment: .topTrailing) {
                         handle("trash", .red).offset(x: 18, y: -18).onTapGesture { onDelete() }
                     }
-                    .offset(x: draft.x * card.width, y: draft.y * card.height)
+                    .offset(x: item.x * card.width, y: item.y * card.height)
+                    .frame(width: card.width, height: card.height, alignment: .topLeading)
             }
-            .allowsHitTesting(true)
+        }
     }
 
     private func handle(_ icon: String, _ color: Color) -> some View {
@@ -166,32 +173,34 @@ struct ImageBoxEditor: View {
     private var move: some Gesture {
         DragGesture(minimumDistance: 0, coordinateSpace: .global)
             .onChanged { drag in
-                let origin = start ?? draft
-                start = origin
+                guard let current = draft.item else { return }
+                let origin = draft.start ?? current
+                draft.start = origin
                 var b = origin
                 let height = origin.w * origin.aspect * card.width / card.height
                 b.x = min(max(origin.x + drag.translation.width / card.width, 0), max(0, 1 - origin.w))
                 b.y = min(max(origin.y + drag.translation.height / card.height, 0), max(0, 1 - height))
-                draft = b
+                draft.item = b
             }
-            .onEnded { _ in commit() }
+            .onEnded { _ in finish() }
     }
 
     private var resize: some Gesture {
         DragGesture(minimumDistance: 0, coordinateSpace: .global)
             .onChanged { drag in
-                let origin = start ?? draft
-                start = origin
+                guard let current = draft.item else { return }
+                let origin = draft.start ?? current
+                draft.start = origin
                 var b = origin
                 let maxW = min(1 - origin.x, (1 - origin.y) * card.height / (origin.aspect * card.width))
                 b.w = min(max(origin.w + drag.translation.width / card.width, 0.08), max(0.08, maxW))
-                draft = b
+                draft.item = b
             }
-            .onEnded { _ in commit() }
+            .onEnded { _ in finish() }
     }
 
-    private func commit() {
-        start = nil
-        if item != draft { item = draft }
+    private func finish() {
+        draft.start = nil
+        if let item = draft.item { onCommit(item) }
     }
 }
