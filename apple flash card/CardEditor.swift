@@ -15,6 +15,7 @@ struct CardEditor: View {
     @State private var photoSelection: PhotosPickerItem?
     @State private var confirmingDelete = false
     @FocusState private var textFocused: Bool
+    @State private var landscape = false
     @StateObject private var viewport = Viewport()
 
     init(deck: Deck, start: Card) {
@@ -32,47 +33,69 @@ struct CardEditor: View {
         let cards = deck.sortedCards
         let index = cards.firstIndex { $0 === card } ?? 0
 
-        VStack(spacing: typing ? 12 : 20) {
+        // In portrait the button area keeps its size while editing, so the card (and the photo
+        // or text on it) never jumps. In landscape the keyboard needs the room, so it collapses.
+        let steady = !landscape
+
+        VStack(spacing: steady ? 20 : (typing ? 12 : 20)) {
             header(index: index, count: cards.count)
             // Controls sit above the card, away from where the Pencil rests while writing,
             // so they aren't hit by accident.
-            if typing && selectedID == nil {
-                // A photo is selected: just a way to finish.
-                Button { Haptics.tap(); deselect() } label: {
-                    Label("Done", systemImage: "checkmark").frame(width: buttonWidth * 3 + 32)
+            if steady {
+                ZStack(alignment: .top) {
+                    controls(index: index, count: cards.count)
+                        .opacity(typing ? 0 : 1)
+                        .allowsHitTesting(!typing)
+                    if typing { editingControls }
                 }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.large)
             } else if typing {
-                // Keep the card as large as possible above the keyboard.
-                HStack(spacing: 16) {
-                    Button { Haptics.tap(); scaleFont(0.9) } label: {
-                        Label("Smaller", systemImage: "textformat.size.smaller").frame(width: buttonWidth)
-                    }
-                    .buttonStyle(.bordered)
-                    Button { Haptics.tap(); deselect() } label: {
-                        Label("Done Typing", systemImage: "checkmark").frame(width: buttonWidth)
-                    }
-                    .buttonStyle(.borderedProminent)
-                    Button { Haptics.tap(); scaleFont(1.1) } label: {
-                        Label("Larger", systemImage: "textformat.size.larger").frame(width: buttonWidth)
-                    }
-                    .buttonStyle(.bordered)
-                }
-                .controlSize(.large)
+                editingControls
             } else {
                 controls(index: index, count: cards.count)
             }
             cardArea(editing)
             Spacer(minLength: 0)
         }
-        .padding(.top, typing ? 12 : 24)
-        .animation(.easeInOut(duration: 0.2), value: typing)
+        .padding(.top, steady ? 24 : (typing ? 12 : 24))
+        .background(GeometryReader { geo in
+            Color.clear
+                .onAppear { landscape = geo.size.width > geo.size.height }
+                .onChange(of: geo.size) { landscape = geo.size.width > geo.size.height }
+        })
+        .animation(steady ? nil : .easeInOut(duration: 0.2), value: typing)
         .undoBanner(bottom: 150)
         .onChange(of: photoSelection) {
             guard let picked = photoSelection else { return }
             photoSelection = nil
             Task { await importPhoto(picked) }
+        }
+    }
+
+    /// Shown instead of the normal buttons while a text box or photo is selected.
+    @ViewBuilder private var editingControls: some View {
+        if selectedID == nil {
+            // A photo is selected: just a way to finish.
+            Button { Haptics.tap(); deselect() } label: {
+                Label("Done", systemImage: "checkmark").frame(width: buttonWidth * 3 + 32)
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.large)
+        } else {
+            HStack(spacing: 16) {
+                Button { Haptics.tap(); scaleFont(0.9) } label: {
+                    Label("Smaller", systemImage: "textformat.size.smaller").frame(width: buttonWidth)
+                }
+                .buttonStyle(.bordered)
+                Button { Haptics.tap(); deselect() } label: {
+                    Label("Done Typing", systemImage: "checkmark").frame(width: buttonWidth)
+                }
+                .buttonStyle(.borderedProminent)
+                Button { Haptics.tap(); scaleFont(1.1) } label: {
+                    Label("Larger", systemImage: "textformat.size.larger").frame(width: buttonWidth)
+                }
+                .buttonStyle(.bordered)
+            }
+            .controlSize(.large)
         }
     }
 
