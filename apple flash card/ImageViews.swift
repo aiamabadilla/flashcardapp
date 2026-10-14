@@ -95,15 +95,20 @@ struct PlacedImage: View {
     }
 }
 
-/// Photos that track the canvas's zoom and pan.
+/// All of a side's photos, back to front, tracking the canvas's zoom and pan. The photo being
+/// edited is drawn from its draft (so moves and opacity show live) at its own place in the stack.
 struct ZoomingImages: View {
     @ObservedObject var viewport: Viewport
+    @ObservedObject var draft: ImageDraft
     let items: [ImageItem]
+    let selectedID: UUID?
     let card: CGSize
 
     var body: some View {
         ZStack(alignment: .topLeading) {
-            ForEach(items) { PlacedImage(item: $0, card: card) }
+            ForEach(items) { saved in
+                PlacedImage(item: saved.id == selectedID ? (draft.item ?? saved) : saved, card: card)
+            }
         }
         .frame(width: card.width, height: card.height, alignment: .topLeading)
         .scaleEffect(viewport.zoom, anchor: .topLeading)
@@ -134,7 +139,7 @@ struct ImageBoxEditor: View {
         if let item = draft.item {
             switch part {
             case .picture:
-                PlacedImage(item: item, card: card)
+                EmptyView()
             case .handles:
                 let width = item.w * card.width
                 let height = width * item.aspect
@@ -202,5 +207,29 @@ struct ImageBoxEditor: View {
     private func finish() {
         draft.start = nil
         if let item = draft.item { onCommit(item) }
+    }
+}
+
+/// The opacity slider for the selected photo. Observes the draft itself so the percentage and
+/// the slider stay current without redrawing the whole editor.
+struct PhotoOpacityRow: View {
+    @ObservedObject var draft: ImageDraft
+    let card: Card
+
+    var body: some View {
+        let value = draft.item?.opacity ?? 1
+        HStack(spacing: 14) {
+            Image(systemName: "circle.lefthalf.filled").foregroundStyle(.secondary)
+            Slider(value: Binding(
+                get: { value },
+                set: { new in
+                    guard var item = draft.item else { return }
+                    item.opacity = new
+                    draft.item = item
+                    card.updateImageItem(item)
+                }), in: 0.1...1)
+            Text("\(Int((value * 100).rounded()))%")
+                .monospacedDigit().foregroundStyle(.secondary).frame(width: 52, alignment: .trailing)
+        }
     }
 }

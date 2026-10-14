@@ -231,6 +231,30 @@ nonisolated struct ImageItem: Codable, Identifiable, Equatable, Sendable {
         storeImages(items)
     }
 
+    /// Photo stacking order is the order of the list: first = furthest back.
+    enum LayerMove { case toBack, backward, forward, toFront }
+
+    func moveImage(_ id: UUID, _ move: LayerMove) {
+        var items = allImageItems
+        guard let i = items.firstIndex(where: { $0.id == id }) else { return }
+        let item = items.remove(at: i)
+        let j: Int
+        switch move {
+        case .toBack: j = 0
+        case .backward: j = max(i - 1, 0)
+        case .forward: j = min(i + 1, items.count)
+        case .toFront: j = items.count
+        }
+        items.insert(item, at: j)
+        storeImages(items)
+    }
+
+    func imageLayerIndex(_ id: UUID) -> (index: Int, count: Int)? {
+        let items = allImageItems
+        guard let i = items.firstIndex(where: { $0.id == id }) else { return nil }
+        return (i, items.count)
+    }
+
     func removeImageItem(_ id: UUID) {
         storeImages(allImageItems.filter { $0.id != id })
     }

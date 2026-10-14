@@ -13,7 +13,8 @@ struct CardEditor: View {
     @State private var angle = 0.0
     @State private var selectedID: UUID?
     @State private var selectedImageID: UUID?
-    @StateObject private var imageDraft = ImageDraft()
+    // Held without observation: only the small views that need it redraw while dragging.
+    @State private var imageDraft = ImageDraft()
     @State private var photoSelection: PhotosPickerItem?
     @State private var confirmingDelete = false
     @FocusState private var textFocused: Bool
@@ -72,6 +73,10 @@ struct CardEditor: View {
         })
         .animation(steady ? nil : .easeInOut(duration: 0.2), value: typing)
         .undoBanner(bottom: 150)
+        .onChange(of: card.imageItemsJSON) {
+            // Layer or other changes made elsewhere: keep the draft in step.
+            if let id = selectedImageID, imageDraft.start == nil { imageDraft.item = card.imageItem(id) }
+        }
         .onChange(of: selectedImageID) {
             imageDraft.item = selectedImageID.flatMap { card.imageItem($0) }
             imageDraft.start = nil
@@ -86,13 +91,15 @@ struct CardEditor: View {
     /// Shown instead of the normal buttons while a text box or photo is selected.
     @ViewBuilder private var editingControls: some View {
         if selectedID == nil && selectedImageID != nil {
-            // A photo is selected: opacity (to line it up with writing) and a way to finish.
-            VStack(spacing: 16) {
-                HStack(spacing: 14) {
-                    Image(systemName: "circle.lefthalf.filled").foregroundStyle(.secondary)
-                    Slider(value: opacityBinding, in: 0.1...1)
-                    Text("\(Int(((imageDraft.item?.opacity ?? 1) * 100).rounded()))%")
-                        .monospacedDigit().foregroundStyle(.secondary).frame(width: 52, alignment: .trailing)
+            // A photo is selected: opacity (to line it up with writing), layer order, and Done.
+            VStack(spacing: 14) {
+                PhotoOpacityRow(draft: imageDraft, card: card)
+                    .frame(width: buttonWidth * 3 + 32)
+                HStack(spacing: 10) {
+                    layerButton("To Back", "square.3.layers.3d.bottom.filled", .toBack)
+                    layerButton("Backward", "square.2.layers.3d.bottom.filled", .backward)
+                    layerButton("Forward", "square.2.layers.3d.top.filled", .forward)
+                    layerButton("To Front", "square.3.layers.3d.top.filled", .toFront)
                 }
                 .frame(width: buttonWidth * 3 + 32)
                 Button { Haptics.tap(); deselect() } label: {
@@ -126,16 +133,21 @@ struct CardEditor: View {
         }
     }
 
-    /// Opacity of the selected photo; saved to the card as the slider moves.
-    private var opacityBinding: Binding<Double> {
-        Binding(
-            get: { imageDraft.item?.opacity ?? 1 },
-            set: { value in
-                guard var item = imageDraft.item else { return }
-                item.opacity = value
-                imageDraft.item = item
-                card.updateImageItem(item)
-            })
+    private func layerButton(_ title: String, _ icon: String, _ move: Card.LayerMove) -> some View {
+        let position = selectedImageID.flatMap { card.imageLayerIndex($0) }
+        let atBack = (position?.index ?? 0) == 0
+        let atFront = (position?.index ?? 0) >= (position?.count ?? 1) - 1
+        let disabled = (move == .toBack || move == .backward) ? atBack : atFront
+        return Button {
+            guard let id = selectedImageID else { return }
+            Haptics.select()
+            card.moveImage(id, move)
+        } label: {
+            Label(title, systemImage: icon).labelStyle(.titleAndIcon)
+                .font(.footnote).frame(maxWidth: .infinity)
+        }
+        .buttonStyle(.bordered)
+        .disabled(disabled)
     }
 
     // MARK: Header
@@ -186,16 +198,10 @@ struct CardEditor: View {
                             ZoomingLines(viewport: viewport)
                                 .clipShape(RoundedRectangle(cornerRadius: 18))
                         }
-                        // Photos sit under the ink so you can draw over them.
-                        ZoomingImages(viewport: viewport,
-                                      items: images.filter { $0.id != selectedImageID },
-                                      card: geo.size)
+                        // Photos sit under the ink, highlights and text, which always stay on top.
+                        ZoomingImages(viewport: viewport, draft: imageDraft, items: images,
+                                      selectedID: selectedImageID, card: geo.size)
                             .clipShape(RoundedRectangle(cornerRadius: 18))
-                        // The photo being edited is drawn here, under the writing and text.
-                        if selectedImageID != nil {
-                            ImageBoxEditor(draft: imageDraft, part: .picture, card: geo.size)
-                                .clipShape(RoundedRectangle(cornerRadius: 18))
-                        }
                         DrawingCanvas(data: drawing, viewport: viewport,
                                       onTap: { selectPhoto(at: $0, in: images, card: geo.size) },
                                       isActive: !typing)
