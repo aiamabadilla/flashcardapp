@@ -103,7 +103,13 @@ struct DeckListView: View {
             }
             .sheet(isPresented: $showingStats) { StatsView() }
             .sheet(isPresented: $showingTrash) { RecentlyDeletedView() }
-            .sheet(item: $exported) { ShareSheet(url: $0.url) }
+            .sheet(item: $exported) { file in
+                ShareSheet(url: file.url) { completed in
+                    guard completed else { return }
+                    Haptics.success()
+                    backupMessage = "Backup complete: \(plural(file.decks, "deck")), \(plural(file.cards, "card"))."
+                }
+            }
             .fileImporter(isPresented: $showingImporter, allowedContentTypes: [.item]) { result in
                 switch result {
                 case .success(let url):
@@ -172,7 +178,9 @@ struct DeckListView: View {
 
     private func export(_ decks: [Deck], name: String) {
         do {
-            exported = ExportedFile(url: try Backup.export(decks, name: name))
+            let url = try Backup.export(decks, name: name)
+            exported = ExportedFile(url: url, decks: decks.count,
+                                    cards: decks.reduce(0) { $0 + $1.liveCards.count })
             Haptics.tap()
         } catch {
             backupMessage = "Couldn't create the backup: \(error.localizedDescription)"

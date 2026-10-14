@@ -140,9 +140,15 @@ enum Backup {
 /// The system share sheet (AirDrop, Save to Files, Mail...) for a file.
 struct ShareSheet: UIViewControllerRepresentable {
     let url: URL
+    /// Called when the sheet closes; `completed` is false if the person cancelled.
+    var onFinish: (_ completed: Bool) -> Void = { _ in }
 
     func makeUIViewController(context: Context) -> UIActivityViewController {
-        UIActivityViewController(activityItems: [url], applicationActivities: nil)
+        let controller = UIActivityViewController(activityItems: [url], applicationActivities: nil)
+        controller.completionWithItemsHandler = { _, completed, _, error in
+            DispatchQueue.main.async { onFinish(completed && error == nil) }
+        }
+        return controller
     }
 
     func updateUIViewController(_ controller: UIActivityViewController, context: Context) {}
@@ -152,4 +158,6 @@ struct ShareSheet: UIViewControllerRepresentable {
 struct ExportedFile: Identifiable {
     let id = UUID()
     let url: URL
+    var decks = 0
+    var cards = 0
 }
