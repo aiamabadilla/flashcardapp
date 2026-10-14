@@ -34,7 +34,8 @@ struct CardEditor: View {
 
         VStack(spacing: typing ? 12 : 20) {
             header(index: index, count: cards.count)
-            cardArea(editing)
+            // Controls sit above the card, away from where the Pencil rests while writing,
+            // so they aren't hit by accident.
             if typing && selectedID == nil {
                 // A photo is selected: just a way to finish.
                 Button { Haptics.tap(); deselect() } label: {
@@ -62,6 +63,7 @@ struct CardEditor: View {
             } else {
                 controls(index: index, count: cards.count)
             }
+            cardArea(editing)
             Spacer(minLength: 0)
         }
         .padding(.top, typing ? 12 : 24)
