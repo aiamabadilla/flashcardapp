@@ -163,6 +163,10 @@ struct CardEditor: View {
                                       onTap: { selectPhoto(at: $0, in: images, card: geo.size) },
                                       isActive: !typing)
                             .id("\(ObjectIdentifier(card).hashValue)-\(showingFront)")
+                            // Fixed internal size, scaled to the card, so ink scales with it.
+                            .frame(width: logicalWidth(for: geo.size), height: logicalWidth(for: geo.size) * 0.6)
+                            .scaleEffect(geo.size.width / logicalWidth(for: geo.size), anchor: .topLeading)
+                            .frame(width: geo.size.width, height: geo.size.height, alignment: .topLeading)
                             // While moving ink, preview the change on the canvas itself.
                             .scaleEffect(inkEditing ? inkScale : 1,
                                          anchor: UnitPoint(x: inkBounds.minX / max(geo.size.width, 1),
@@ -350,46 +354,29 @@ struct CardEditor: View {
     /// The canvas currently showing this side's ink.
     private var liveCanvas: PKCanvasView? { viewport.scrollView as? PKCanvasView }
 
-    /// Keeps the ink tied to the card, whatever size the card is drawn at (portrait,
-    /// landscape, keyboard up). Ink is stored in card points, so when the card's width
-    /// changes it is scaled by the same factor and the width is recorded for previews.
+    /// The canvas keeps a fixed internal size (the card's width when it was first used) and is
+    /// scaled to the card, so ink, photos and text all grow and shrink together. This only
+    /// has to remember that width the first time.
+    /// The canvas's own width: what the card measured when it was first drawn on.
+    private func logicalWidth(for card: CGSize) -> CGFloat {
+        let w = self.card.inkRefWidth > 0 ? CGFloat(self.card.inkRefWidth) : max(card.width, 1)
+        viewport.displayScale = card.width / w
+        return w
+    }
+
     private func recordWidth(_ width: CGFloat) {
         guard width > 100 else { return }
-        widthTask?.cancel()
-        widthTask = Task { @MainActor in
-            try? await Task.sleep(for: .milliseconds(250))   // let the layout settle
-            guard !Task.isCancelled, !inkEditing else { return }
-            Card.lastKnownCardWidth = width
-            let ref = card.inkRefWidth
-            guard ref > 0 else { card.inkRefWidth = width; return }
-            guard abs(ref - width) > 0.5 else { return }
-
-            let k = width / ref
-            let scale = CGAffineTransform(scaleX: k, y: k)
-            func scaled(_ data: Data) -> Data {
-                guard !data.isEmpty, let drawing = try? PKDrawing(data: data) else { return data }
-                let strokes = drawing.strokes.map { stroke -> PKStroke in
-                    var s = stroke
-                    s.transform = stroke.transform.concatenating(scale)
-                    return s
-                }
-                return PKDrawing(strokes: strokes).dataRepresentation()
-            }
-            card.front = scaled(card.front)
-            card.back = scaled(card.back)
-            // The canvas holds its own copy of the visible side; update it too.
-            if let canvas = liveCanvas {
-                canvas.drawing = (try? PKDrawing(data: showingFront ? card.front : card.back)) ?? PKDrawing()
-            }
-            card.inkRefWidth = width
-        }
+        Card.lastKnownCardWidth = width
+        if card.inkRefWidth <= 0 { card.inkRefWidth = width }
     }
 
     private func startInkEditing() {
         guard let canvas = liveCanvas, !canvas.drawing.bounds.isEmpty else { return }
         deselect()
         viewport.resetCanvasZoom()
-        inkBounds = canvas.drawing.bounds
+        let k = viewport.displayScale
+        let b = canvas.drawing.bounds
+        inkBounds = CGRect(x: b.minX * k, y: b.minY * k, width: b.width * k, height: b.height * k)
         inkScale = 1
         inkOffset = .zero
         inkEditing = true
@@ -403,9 +390,11 @@ struct CardEditor: View {
             inkOffset = .zero
         }
         guard inkScale != 1 || inkOffset != .zero, let canvas = liveCanvas else { return }
-        let o = inkBounds.origin
+        // The box is in card points; the drawing is in canvas units.
+        let k = max(viewport.displayScale, 0.01)
+        let o = CGPoint(x: inkBounds.origin.x / k, y: inkBounds.origin.y / k)
         // Scale about the box's top-left corner, then shift.
-        let transform = CGAffineTransform(translationX: o.x + inkOffset.width, y: o.y + inkOffset.height)
+        let transform = CGAffineTransform(translationX: o.x + inkOffset.width / k, y: o.y + inkOffset.height / k)
             .scaledBy(x: inkScale, y: inkScale)
             .translatedBy(x: -o.x, y: -o.y)
         let moved = scaledWithStrokeWidth(canvas.drawing, transform: transform, scale: inkScale)

@@ -83,7 +83,8 @@ struct DrawingCanvas: UIViewRepresentable {
             // pan offset and is scaled by the zoom.
             let point = gesture.location(in: canvas)
             let zoom = max(canvas.zoomScale, 0.01)
-            onTap(CGPoint(x: point.x / zoom, y: point.y / zoom))
+            let k = viewport?.displayScale ?? 1
+            onTap(CGPoint(x: point.x / zoom * k, y: point.y / zoom * k))
         }
 
         func gestureRecognizer(_ g: UIGestureRecognizer,
@@ -95,7 +96,8 @@ struct DrawingCanvas: UIViewRepresentable {
         private func report(_ scrollView: UIScrollView) {
             guard let viewport else { return }
             viewport.zoom = scrollView.zoomScale
-            viewport.offset = scrollView.contentOffset
+            viewport.offset = CGPoint(x: scrollView.contentOffset.x * viewport.displayScale,
+                                      y: scrollView.contentOffset.y * viewport.displayScale)
         }
 
         deinit { if let observer { NotificationCenter.default.removeObserver(observer) } }
