@@ -11,13 +11,22 @@ enum InkRenderer {
         return c
     }()
 
+    private static func key(_ data: Data, dark: Bool, refWidth: Double, scale: CGFloat) -> NSString {
+        "\(data.count)-\(data.hashValue)-\(dark)-\(refWidth)-\(scale)" as NSString
+    }
+
+    /// An already-rendered image, if there is one. Never renders.
+    static func cached(_ data: Data, dark: Bool, refWidth: Double = 0, scale: CGFloat = 2) -> UIImage? {
+        guard !data.isEmpty else { return nil }
+        return cache.object(forKey: key(data, dark: dark, refWidth: refWidth, scale: scale))
+    }
+
     /// The ink as an image. With a reference width it covers the whole card area (so ink is at
     /// its true position and size); without one it is cropped to the ink and fitted.
-    static func image(_ data: Data, dark: Bool, refWidth: Double = 0, scale: CGFloat = 2) -> UIImage? {
-        guard !data.isEmpty else { return nil }
-        let key = "\(data.count)-\(data.hashValue)-\(dark)-\(refWidth)-\(scale)" as NSString
-        if let hit = cache.object(forKey: key) { return hit }
-        guard let drawing = try? PKDrawing(data: data), !drawing.bounds.isEmpty else { return nil }
+    /// Rendering is the expensive part, so grids call this off the main thread.
+    nonisolated static func render(_ data: Data, dark: Bool, refWidth: Double, scale: CGFloat) -> UIImage? {
+        guard !data.isEmpty,
+              let drawing = try? PKDrawing(data: data), !drawing.bounds.isEmpty else { return nil }
         let rect = refWidth > 0
             ? CGRect(x: 0, y: 0, width: refWidth, height: refWidth * 3 / 5)
             : drawing.bounds
@@ -25,7 +34,18 @@ enum InkRenderer {
         UITraitCollection(userInterfaceStyle: dark ? .dark : .light).performAsCurrent {
             image = drawing.image(from: rect, scale: scale)
         }
-        if let image { cache.setObject(image, forKey: key) }
+        return image
+    }
+
+    static func store(_ image: UIImage, for data: Data, dark: Bool, refWidth: Double, scale: CGFloat) {
+        cache.setObject(image, forKey: key(data, dark: dark, refWidth: refWidth, scale: scale))
+    }
+
+    /// Synchronous convenience (cache, then render). Used where an image is needed immediately.
+    static func image(_ data: Data, dark: Bool, refWidth: Double = 0, scale: CGFloat = 2) -> UIImage? {
+        if let hit = cached(data, dark: dark, refWidth: refWidth, scale: scale) { return hit }
+        guard let image = render(data, dark: dark, refWidth: refWidth, scale: scale) else { return nil }
+        store(image, for: data, dark: dark, refWidth: refWidth, scale: scale)
         return image
     }
 }
@@ -35,18 +55,45 @@ struct DrawingImage: View {
     var refWidth: Double = 0
     var padding: CGFloat = 12
     @Environment(\.colorScheme) private var scheme
+    @State private var rendered: UIImage?
 
     var body: some View {
+        let dark = scheme == .dark
         // Scale so the small previews stay sharp: about 1000 px across the card.
-        let scale = refWidth > 0 ? max(1, min(1000 / refWidth, 3)) : 2
-        if let image = InkRenderer.image(data, dark: scheme == .dark, refWidth: refWidth, scale: scale) {
-            if refWidth > 0 {
-                // Covers the face exactly, so ink lines up with photos and text.
-                Image(uiImage: image).resizable()
+        let scale: CGFloat = refWidth > 0 ? max(1, min(1000 / refWidth, 3)) : 2
+        let image = InkRenderer.cached(data, dark: dark, refWidth: refWidth, scale: scale) ?? rendered
+
+        Group {
+            if let image {
+                if refWidth > 0 {
+                    // Covers the face exactly, so ink lines up with photos and text.
+                    Image(uiImage: image).resizable()
+                } else {
+                    Image(uiImage: image).resizable().scaledToFit().padding(padding)
+                }
             } else {
-                Image(uiImage: image).resizable().scaledToFit().padding(padding)
+                Color.clear
             }
         }
+        // First time this ink is shown: draw it off the main thread so scrolling stays smooth.
+        .task(id: RenderKey(count: data.count, hash: data.hashValue, dark: dark, scale: scale)) {
+            guard InkRenderer.cached(data, dark: dark, refWidth: refWidth, scale: scale) == nil else {
+                rendered = nil
+                return
+            }
+            let snapshot = data
+            let width = refWidth
+            let result = await Task.detached(priority: .userInitiated) {
+                InkRenderer.render(snapshot, dark: dark, refWidth: width, scale: scale)
+            }.value
+            guard !Task.isCancelled, let result else { return }
+            InkRenderer.store(result, for: snapshot, dark: dark, refWidth: width, scale: scale)
+            rendered = result
+        }
+    }
+
+    private struct RenderKey: Hashable {
+        let count: Int, hash: Int, dark: Bool, scale: CGFloat
     }
 }
 
