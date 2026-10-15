@@ -96,8 +96,10 @@ enum ItemCache {
 // New properties all have defaults so existing stores migrate automatically.
 @Model final class Card {
     var order: Int
-    var front: Data
-    var back: Data
+    // Drawings can be large; keeping them out of the row means listing decks and cards does
+    // not read every drawing. (Schema V2.)
+    @Attribute(.externalStorage) var front: Data
+    @Attribute(.externalStorage) var back: Data
     var frontText: String = ""
     var backText: String = ""
     var frontLined: Bool = true
