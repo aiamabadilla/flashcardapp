@@ -17,6 +17,8 @@ struct DeckListView: View {
     @State private var showingImporter = false
     @State private var backupMessage: String?
     @State private var query = ""
+    /// The query after a short pause in typing; searches run on this, not on every keystroke.
+    @State private var settledQuery = ""
     @State private var indexingLeft = 0
     @State private var searchTarget: SearchTarget?
 
@@ -88,8 +90,8 @@ struct DeckListView: View {
             }
             .searchable(text: $query, prompt: "Search cards and handwriting")
             .overlay {
-                if !query.trimmingCharacters(in: .whitespaces).isEmpty {
-                    SearchResultsView(query: query, decks: decks, indexingLeft: indexingLeft) { hit in
+                if !settledQuery.trimmingCharacters(in: .whitespaces).isEmpty {
+                    SearchResultsView(query: settledQuery, decks: decks, indexingLeft: indexingLeft) { hit in
                         searchTarget = SearchTarget(deck: hit.deck, card: hit.card)
                     }
                     .background(Color(.systemGroupedBackground))
@@ -97,6 +99,12 @@ struct DeckListView: View {
             }
             .fullScreenCover(item: $searchTarget) { CardEditor(deck: $0.deck, start: $0.card) }
             // Read any new or changed handwriting as soon as someone searches, so results are current.
+            .task(id: query) {
+                // Wait for a pause in typing before searching (cancelled by the next keystroke).
+                if query.isEmpty { settledQuery = ""; return }
+                try? await Task.sleep(for: .milliseconds(250))
+                if !Task.isCancelled { settledQuery = query }
+            }
             .task(id: query.isEmpty) {
                 guard !query.isEmpty else { return }
                 await HandwritingIndex.indexAll(in: context) { indexingLeft = $0 }
@@ -179,9 +187,8 @@ struct DeckListView: View {
 
     /// Items in Recently Deleted: decks, plus deleted cards whose deck still exists.
     private var trashCount: Int {
-        trashedDecks.count + trashedCards.filter { card in
-            decks.contains { $0.cards.contains { $0 === card } }
-        }.count
+        let live = Set(decks.flatMap { $0.cards.map(\.persistentModelID) })
+        return trashedDecks.count + trashedCards.filter { live.contains($0.persistentModelID) }.count
     }
 
     private func export(_ decks: [Deck], name: String) {
