@@ -22,6 +22,8 @@ struct StudyView: View {
     private var current: Card? { queue.first }
     private var firstTry: Int { total - missedOnce.count }
 
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     var body: some View {
         VStack(spacing: 24) {
             header
@@ -35,6 +37,11 @@ struct StudyView: View {
                     .padding(.horizontal, 40)
                     .rotation3DEffect(.degrees(angle), axis: (x: 0, y: 1, z: 0))
                     .onTapGesture { flip() }
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel(showingBack ? "Answer side of card" : "Question side of card")
+                    .accessibilityHint("Double tap to flip")
+                    .accessibilityAddTraits(.isButton)
+                    .accessibilityAction { flip() }
 
                 if showingBack {
                     HStack(spacing: 24) {
@@ -42,16 +49,23 @@ struct StudyView: View {
                             Label("Don't Know", systemImage: "xmark").frame(width: 200)
                         }
                         .tint(.red)
+                        .keyboardShortcut(.leftArrow, modifiers: [])
                         Button { answer(known: true) } label: {
                             Label("Know It", systemImage: "checkmark").frame(width: 200)
                         }
                         .tint(.green)
+                        .keyboardShortcut(.rightArrow, modifiers: [])
                     }
                     .buttonStyle(.borderedProminent)
                     .controlSize(.large)
                 } else {
                     Text("Tap the card to reveal the answer")
                         .font(.subheadline).foregroundStyle(.secondary)
+                    // Space flips from a hardware keyboard; hidden so it takes no room.
+                    Button("Flip") { flip() }
+                        .keyboardShortcut(.space, modifiers: [])
+                        .frame(width: 0, height: 0).opacity(0)
+                        .accessibilityHidden(true)
                 }
             } else {
                 summary
@@ -64,6 +78,7 @@ struct StudyView: View {
     private var header: some View {
         HStack {
             Button("Done") { Haptics.tap(); dismiss() }
+                .keyboardShortcut(.escape, modifiers: [])
                 .frame(width: 100, alignment: .leading)
             Spacer()
             Text(current == nil ? "Session Complete" : "\(known) of \(total) known")
@@ -116,6 +131,7 @@ struct StudyView: View {
 
     private func flip() {
         Haptics.flip()
+        if reduceMotion { showingBack.toggle(); return }
         withAnimation(.easeIn(duration: 0.18)) { angle = 90 }
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.18) {
             showingBack.toggle()

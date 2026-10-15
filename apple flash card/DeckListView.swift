@@ -180,6 +180,7 @@ struct DeckListView: View {
                     }
                     AppearanceMenu()
                     Button { newDeck() } label: { Label("New Deck", systemImage: "plus") }
+                        .keyboardShortcut("n", modifiers: .command)
                 }
             }
         }

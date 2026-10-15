@@ -193,6 +193,15 @@ struct ImageBoxEditor: View {
             .frame(width: HandleStyle.size, height: HandleStyle.size)
             .background(Circle().fill(color))
             .contentShape(Circle())
+            .accessibilityLabel(Self.handleName(icon))
+    }
+
+    private static func handleName(_ icon: String) -> String {
+        if icon.contains("trash") { return "Delete" }
+        if icon.contains("move") || icon.hasPrefix("arrow.up.and.down") || icon.contains("hand") { return "Move" }
+        if icon.contains("resize") || icon.contains("arrow.up.left.and.arrow.down.right") || icon.contains("diagonal") { return "Resize" }
+        if icon.contains("checkmark") { return "Done" }
+        return "Edit handle"
     }
 
     // Screen coordinates: the handles move with the photo, so measuring in their own

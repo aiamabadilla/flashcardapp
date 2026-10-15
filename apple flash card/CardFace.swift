@@ -310,6 +310,15 @@ struct TextBoxEditor: View {
             .frame(width: HandleStyle.size, height: HandleStyle.size)
             .background(Circle().fill(color))
             .contentShape(Circle())
+            .accessibilityLabel(Self.handleName(icon))
+    }
+
+    private static func handleName(_ icon: String) -> String {
+        if icon.contains("trash") { return "Delete" }
+        if icon.contains("move") || icon.hasPrefix("arrow.up.and.down") || icon.contains("hand") { return "Move" }
+        if icon.contains("resize") || icon.contains("arrow.up.left.and.arrow.down.right") || icon.contains("diagonal") { return "Resize" }
+        if icon.contains("checkmark") { return "Done" }
+        return "Edit handle"
     }
 
     // Gestures use screen coordinates: the handles move with the box, so measuring in
@@ -386,6 +395,15 @@ struct InkBoxEditor: View {
             .frame(width: HandleStyle.size, height: HandleStyle.size)
             .background(Circle().fill(Color.accentColor))
             .contentShape(Circle())
+            .accessibilityLabel(Self.handleName(icon))
+    }
+
+    private static func handleName(_ icon: String) -> String {
+        if icon.contains("trash") { return "Delete" }
+        if icon.contains("move") || icon.hasPrefix("arrow.up.and.down") || icon.contains("hand") { return "Move" }
+        if icon.contains("resize") || icon.contains("arrow.up.left.and.arrow.down.right") || icon.contains("diagonal") { return "Resize" }
+        if icon.contains("checkmark") { return "Done" }
+        return "Edit handle"
     }
 
     // Screen coordinates, as for photos: the handles move with the box.
