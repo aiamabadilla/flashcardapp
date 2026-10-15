@@ -23,25 +23,17 @@
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
-		C0FFEE000000000000000003 /* IMSTUDYTests */ = {
-			isa = PBXFileSystemSynchronizedRootGroup;
-			path = IMSTUDYTests;
-			sourceTree = "<group>";
-		};
 		587579B8307750B4009AD54D /* apple flash card */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			path = "apple flash card";
 			sourceTree = "<group>";
 		};
-/* End PBXFileSystemSynchronizedRootGroup section */
-
-/* Begin PBXTargetDependency section */
-		C0FFEE00000000000000000A /* PBXTargetDependency */ = {
-			isa = PBXTargetDependency;
-			target = 587579B5307750B4009AD54D /* apple flash card */;
-			targetProxy = C0FFEE00000000000000000B /* PBXContainerItemProxy */;
+		C0FFEE000000000000000003 /* IMSTUDYTests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = IMSTUDYTests;
+			sourceTree = "<group>";
 		};
-/* End PBXTargetDependency section */
+/* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
 		587579B3307750B4009AD54D /* Frameworks */ = {
@@ -244,6 +236,14 @@
 		};
 /* End PBXSourcesBuildPhase section */
 
+/* Begin PBXTargetDependency section */
+		C0FFEE00000000000000000A /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 587579B5307750B4009AD54D /* apple flash card */;
+			targetProxy = C0FFEE00000000000000000B /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
 /* Begin XCBuildConfiguration section */
 		587579CA307750B5009AD54D /* Debug */ = {
 			isa = XCBuildConfiguration;
@@ -255,8 +255,8 @@
 				DEVELOPMENT_TEAM = J5884JVZS2;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = IMSTUDY;
-				INFOPLIST_KEY_LSSupportsOpeningDocumentsInPlace = YES;
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
+				INFOPLIST_KEY_LSSupportsOpeningDocumentsInPlace = YES;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UIFileSharingEnabled = YES;
@@ -289,8 +289,8 @@
 				DEVELOPMENT_TEAM = J5884JVZS2;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = IMSTUDY;
-				INFOPLIST_KEY_LSSupportsOpeningDocumentsInPlace = YES;
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
+				INFOPLIST_KEY_LSSupportsOpeningDocumentsInPlace = YES;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UIFileSharingEnabled = YES;
@@ -444,8 +444,8 @@
 				DEVELOPMENT_TEAM = J5884JVZS2;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = "IMSTUDY Private";
-				INFOPLIST_KEY_LSSupportsOpeningDocumentsInPlace = YES;
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
+				INFOPLIST_KEY_LSSupportsOpeningDocumentsInPlace = YES;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UIFileSharingEnabled = YES;
@@ -479,8 +479,8 @@
 				DEVELOPMENT_TEAM = J5884JVZS2;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = "IMSTUDY Private";
-				INFOPLIST_KEY_LSSupportsOpeningDocumentsInPlace = YES;
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
+				INFOPLIST_KEY_LSSupportsOpeningDocumentsInPlace = YES;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UIFileSharingEnabled = YES;
@@ -517,11 +517,11 @@
 				PRODUCT_BUNDLE_IDENTIFIER = com.devaiam.imstudy.tests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = 2;
 				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/apple flash card.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/apple flash card";
-				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
-				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 			};
 			name = Debug;
 		};
