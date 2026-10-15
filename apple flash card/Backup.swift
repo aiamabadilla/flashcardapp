@@ -34,6 +34,8 @@ enum Backup {
         var reviewCount: Int
         var correctCount: Int
         var lastReviewed: Double
+        /// Width of the editor card the ink was drawn on. Optional: older backups don't have it.
+        var inkRefWidth: Double?
     }
 
     struct PhotoDTO: Codable {
@@ -49,11 +51,15 @@ enum Backup {
     enum BackupError: LocalizedError {
         case notABackup
         case newerVersion
+        case unsafeContents
+        case tooLarge
 
         var errorDescription: String? {
             switch self {
             case .notABackup: "That file isn't an IMSTUDY backup."
             case .newerVersion: "That backup was made by a newer version of IMSTUDY."
+            case .unsafeContents: "That backup contains invalid data and was not restored."
+            case .tooLarge: "That backup is larger than IMSTUDY can safely restore."
             }
         }
     }
@@ -90,10 +96,39 @@ enum Backup {
             frontLined: card.frontLined, backLined: card.backLined, isStarred: card.isStarred,
             textItemsJSON: textJSON, imageItemsJSON: card.imageItemsJSON, photos: photos,
             leitnerBox: card.leitnerBox, dueTime: card.dueTime, reviewCount: card.reviewCount,
-            correctCount: card.correctCount, lastReviewed: card.lastReviewed)
+            correctCount: card.correctCount, lastReviewed: card.lastReviewed,
+            inkRefWidth: card.inkRefWidth > 0 ? card.inkRefWidth : nil)
     }
 
     // MARK: Import
+
+    /// Limits that keep a hostile or corrupt file from exhausting memory or disk.
+    static let maxDecks = 2_000
+    static let maxCards = 100_000
+    static let maxPhotoBytes = 40 * 1_024 * 1_024
+
+    /// Rejects an archive with unsafe photo names or implausible sizes.
+    static func validate(_ archive: Archive) throws {
+        guard archive.decks.count <= maxDecks,
+              archive.decks.reduce(0, { $0 + $1.cards.count }) <= maxCards else { throw BackupError.tooLarge }
+        for deck in archive.decks {
+            for card in deck.cards {
+                for photo in card.photos {
+                    guard ImageStore.isSafeName(photo.file) else { throw BackupError.unsafeContents }
+                    guard photo.data.count <= maxPhotoBytes else { throw BackupError.tooLarge }
+                }
+            }
+        }
+    }
+
+    /// Keeps only photo references whose file name is safe.
+    static func sanitizedImageItems(_ json: String) -> String {
+        guard !json.isEmpty, let data = json.data(using: .utf8),
+              let items = try? JSONDecoder().decode([ImageItem].self, from: data) else { return "" }
+        let kept = items.filter { ImageStore.isSafeName($0.file) }
+        guard let out = try? JSONEncoder().encode(kept), let text = String(data: out, encoding: .utf8) else { return "" }
+        return text
+    }
 
     /// Adds the decks in a backup file as new decks.
     @MainActor static func importArchive(from url: URL, into context: ModelContext) throws -> ImportResult {
@@ -106,6 +141,9 @@ enum Backup {
         guard let archive = try? decoder.decode(Archive.self, from: data),
               archive.format == "imstudy-backup" else { throw BackupError.notABackup }
         guard archive.version <= 1 else { throw BackupError.newerVersion }
+
+        // Check everything before touching the store, so a bad file leaves nothing behind.
+        try validate(archive)
 
         var result = ImportResult()
         for d in archive.decks {
@@ -120,7 +158,8 @@ enum Backup {
                 card.backLined = c.backLined
                 card.isStarred = c.isStarred
                 card.textItemsJSON = c.textItemsJSON
-                card.imageItemsJSON = c.imageItemsJSON
+                card.imageItemsJSON = sanitizedImageItems(c.imageItemsJSON)
+                if let w = c.inkRefWidth, w > 0 { card.inkRefWidth = w }
                 card.leitnerBox = c.leitnerBox
                 card.dueTime = c.dueTime
                 card.reviewCount = c.reviewCount

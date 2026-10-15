@@ -11,6 +11,25 @@ enum ImageStore {
         return c
     }()
 
+    /// Photo files are named `<UUID>.jpg`. Names that arrive from outside (backups) must look
+    /// like a plain file name, so they can never point outside the photo folder.
+    static func isSafeName(_ name: String) -> Bool {
+        func isASCIIAlphanumeric(_ u: Unicode.Scalar) -> Bool {
+            (u >= "a" && u <= "z") || (u >= "A" && u <= "Z") || (u >= "0" && u <= "9")
+        }
+        let scalars = Array(name.unicodeScalars)
+        guard !scalars.isEmpty, scalars.count <= 128, isASCIIAlphanumeric(scalars[0]) else { return false }
+        return scalars.allSatisfy { isASCIIAlphanumeric($0) || $0 == "." || $0 == "-" || $0 == "_" }
+            && !name.contains("..")
+    }
+
+    /// The photo folder (exposed for tests).
+    static var storageDirectory: URL { directory }
+
+    private static func url(for name: String) -> URL? {
+        isSafeName(name) ? directory.appendingPathComponent(name) : nil
+    }
+
     private static var directory: URL {
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
         let dir = base.appendingPathComponent("CardImages", isDirectory: true)
@@ -48,26 +67,29 @@ enum ImageStore {
 
     /// Raw bytes of a stored photo (for backups).
     static func fileData(_ file: String) -> Data? {
-        try? Data(contentsOf: directory.appendingPathComponent(file))
+        guard let url = url(for: file) else { return nil }
+        return try? Data(contentsOf: url)
     }
 
     /// Writes a photo file under a known name (for restoring backups). Existing files are kept.
     static func write(_ data: Data, as file: String) {
-        let url = directory.appendingPathComponent(file)
-        guard !FileManager.default.fileExists(atPath: url.path) else { return }
+        guard let url = url(for: file),
+              !FileManager.default.fileExists(atPath: url.path) else { return }
         try? data.write(to: url)
     }
 
     static func delete(_ names: [String]) {
         for name in names {
-            try? FileManager.default.removeItem(at: directory.appendingPathComponent(name))
+            guard let url = url(for: name) else { continue }
+            try? FileManager.default.removeItem(at: url)
             cache.removeObject(forKey: name as NSString)
         }
     }
 
     static func image(_ file: String) -> UIImage? {
         if let hit = cache.object(forKey: file as NSString) { return hit }
-        guard let image = UIImage(contentsOfFile: directory.appendingPathComponent(file).path) else { return nil }
+        guard let url = url(for: file),
+              let image = UIImage(contentsOfFile: url.path) else { return nil }
         cache.setObject(image, forKey: file as NSString)
         return image
     }
