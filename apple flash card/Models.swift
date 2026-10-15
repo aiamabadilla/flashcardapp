@@ -30,6 +30,29 @@ nonisolated struct ImageItem: Codable, Identifiable, Equatable, Sendable {
     var opacity: Double?
 }
 
+/// Text and photo boxes live on the card as JSON. A single render reads them many times, so the
+/// decoded result is remembered by the JSON text itself (a changed value is a different key).
+enum ItemCache {
+    private final class Box: NSObject {
+        let value: Any
+        init(_ value: Any) { self.value = value }
+    }
+    private static let cache: NSCache<NSString, Box> = {
+        let c = NSCache<NSString, Box>()
+        c.countLimit = 500
+        return c
+    }()
+
+    static func decode<T: Decodable>(_ json: String, as type: T.Type) -> T? {
+        let key = "\(String(describing: T.self)):\(json)" as NSString
+        if let hit = cache.object(forKey: key)?.value as? T { return hit }
+        guard let data = json.data(using: .utf8),
+              let value = try? JSONDecoder().decode(T.self, from: data) else { return nil }
+        cache.setObject(Box(value), forKey: key)
+        return value
+    }
+}
+
 @Model final class Deck {
     var title: String
     var created: Date
@@ -164,9 +187,7 @@ nonisolated struct ImageItem: Codable, Identifiable, Equatable, Sendable {
     /// Every text box on the card. Text typed before multiple boxes existed (the old
     /// single frontText/backText fields) is carried over as one box per side.
     var allTextItems: [TextItem] {
-        if !textItemsJSON.isEmpty,
-           let data = textItemsJSON.data(using: .utf8),
-           let items = try? JSONDecoder().decode([TextItem].self, from: data) {
+        if !textItemsJSON.isEmpty, let items = ItemCache.decode(textItemsJSON, as: [TextItem].self) {
             return items
         }
         var legacy: [TextItem] = []
@@ -208,8 +229,8 @@ nonisolated struct ImageItem: Codable, Identifiable, Equatable, Sendable {
     // MARK: Photos
 
     var allImageItems: [ImageItem] {
-        guard !imageItemsJSON.isEmpty, let data = imageItemsJSON.data(using: .utf8),
-              let items = try? JSONDecoder().decode([ImageItem].self, from: data) else { return [] }
+        guard !imageItemsJSON.isEmpty,
+              let items = ItemCache.decode(imageItemsJSON, as: [ImageItem].self) else { return [] }
         return items
     }
 
