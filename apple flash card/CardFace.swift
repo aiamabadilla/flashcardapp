@@ -154,6 +154,8 @@ struct CardFace: View {
     @Published var zoom: CGFloat = 1
     @Published var offset: CGPoint = .zero
     weak var scrollView: UIScrollView?
+    /// One tool palette for the whole editor (kept across sides and cards).
+    let toolPicker = PKToolPicker()
     /// How much the canvas is scaled to fit the card (card width / canvas's own width). Pan
     /// offsets and taps are reported in canvas units; this converts them to card points.
     var displayScale: CGFloat = 1

@@ -57,12 +57,15 @@ struct DrawingCanvas: UIViewRepresentable {
 
     static func dismantleUIView(_ uiView: PKCanvasView, coordinator: Coordinator) {
         coordinator.flush()
+        coordinator.picker.removeObserver(uiView)
     }
 
     final class Coordinator: NSObject, PKCanvasViewDelegate, UIGestureRecognizerDelegate {
         var onTap: ((CGPoint) -> Void)?
         var data: Binding<Data>
-        let picker = PKToolPicker()
+        /// Shared by every canvas in one editor, so the chosen pen and colour survive flipping
+        /// sides and moving between cards.
+        let picker: PKToolPicker
         weak var canvas: PKCanvasView?
         let viewport: Viewport?
         private var pending: DispatchWorkItem?
@@ -71,6 +74,7 @@ struct DrawingCanvas: UIViewRepresentable {
         init(data: Binding<Data>, viewport: Viewport?) {
             self.data = data
             self.viewport = viewport
+            self.picker = viewport?.toolPicker ?? PKToolPicker()
             super.init()
             observer = NotificationCenter.default.addObserver(
                 forName: UIApplication.willResignActiveNotification, object: nil, queue: .main
@@ -102,18 +106,37 @@ struct DrawingCanvas: UIViewRepresentable {
 
         deinit { if let observer { NotificationCenter.default.removeObserver(observer) } }
 
-        /// Serializing the whole drawing on every stroke update made the app lag, so
-        /// saves are debounced; the last change is always flushed on exit.
+        /// Serializing the whole drawing on every stroke update made the app lag, so saves wait
+        /// for a pause and serialize off the main thread. The last change is always flushed
+        /// synchronously when leaving the card or the app.
         func canvasViewDrawingDidChange(_ canvasView: PKCanvasView) {
             pending?.cancel()
-            let work = DispatchWorkItem { [weak self] in self?.flush() }
+            let work = DispatchWorkItem { [weak self] in self?.saveInBackground() }
             pending = work
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.4, execute: work)
+        }
+
+        /// Incremented by every save so an older background result never overwrites a newer one.
+        private var generation = 0
+
+        private func saveInBackground() {
+            guard let canvas else { return }
+            generation += 1
+            let mine = generation
+            let drawing = canvas.drawing
+            Task.detached(priority: .utility) {
+                let bytes = drawing.dataRepresentation()
+                await MainActor.run { [weak self] in
+                    guard let self, mine == self.generation else { return }
+                    if bytes != self.data.wrappedValue { self.data.wrappedValue = bytes }
+                }
+            }
         }
 
         func flush() {
             pending?.cancel()
             pending = nil
+            generation += 1            // any background save still in flight is now stale
             guard let canvas else { return }
             let bytes = canvas.drawing.dataRepresentation()
             if bytes != data.wrappedValue { data.wrappedValue = bytes }

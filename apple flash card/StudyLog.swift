@@ -16,7 +16,8 @@ nonisolated struct DayStat: Codable, Equatable, Sendable {
 
     @Published private(set) var days: [String: DayStat] = [:]
     private let storageKey = "studyLog.v1"
-    private let calendar = Calendar.current
+    private let calendar: Calendar
+    private let defaults: UserDefaults
 
     private static let formatter: DateFormatter = {
         let f = DateFormatter()
@@ -25,8 +26,11 @@ nonisolated struct DayStat: Codable, Equatable, Sendable {
         return f
     }()
 
-    private init() {
-        if let data = UserDefaults.standard.data(forKey: storageKey),
+    /// `defaults` and `calendar` are injectable so tests can use a throwaway store and fixed days.
+    init(defaults: UserDefaults = .standard, calendar: Calendar = .current) {
+        self.defaults = defaults
+        self.calendar = calendar
+        if let data = defaults.data(forKey: storageKey),
            let decoded = try? JSONDecoder().decode([String: DayStat].self, from: data) {
             days = decoded
         }
@@ -41,7 +45,7 @@ nonisolated struct DayStat: Codable, Equatable, Sendable {
         stat.seconds += seconds
         days[key(date)] = stat
         if let data = try? JSONEncoder().encode(days) {
-            UserDefaults.standard.set(data, forKey: storageKey)
+            defaults.set(data, forKey: storageKey)
         }
     }
 
@@ -50,14 +54,17 @@ nonisolated struct DayStat: Codable, Equatable, Sendable {
     func stat(on date: Date) -> DayStat { days[key(date)] ?? DayStat() }
     var today: DayStat { stat(on: .now) }
     var studiedToday: Bool { today.reviewed > 0 }
+    func studied(on date: Date) -> Bool { stat(on: date).reviewed > 0 }
 
-    /// Consecutive days with at least one review. A streak is still alive if you
-    /// haven't studied yet today but did yesterday.
-    var currentStreak: Int {
-        var day = calendar.startOfDay(for: .now)
-        if !studiedToday { day = calendar.date(byAdding: .day, value: -1, to: day)! }
+    var currentStreak: Int { streak(asOf: .now) }
+
+    /// Consecutive days with at least one review, counted back from `now`. A streak is still
+    /// alive if you haven't studied yet today but did yesterday.
+    func streak(asOf now: Date) -> Int {
+        var day = calendar.startOfDay(for: now)
+        if !studied(on: day) { day = calendar.date(byAdding: .day, value: -1, to: day)! }
         var count = 0
-        while stat(on: day).reviewed > 0 {
+        while studied(on: day) {
             count += 1
             day = calendar.date(byAdding: .day, value: -1, to: day)!
         }
@@ -95,5 +102,8 @@ nonisolated struct DayStat: Codable, Equatable, Sendable {
         }
     }
 
-    private func key(_ date: Date) -> String { Self.formatter.string(from: date) }
+    private func key(_ date: Date) -> String {
+        Self.formatter.timeZone = calendar.timeZone
+        return Self.formatter.string(from: date)
+    }
 }
