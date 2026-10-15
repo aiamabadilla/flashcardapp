@@ -87,33 +87,46 @@ enum HandwritingIndex {
         }.value
     }
 
-    /// Sides whose ink has changed since they were last read.
-    @MainActor static func pendingCount(in context: ModelContext) -> Int {
-        let cards = (try? context.fetch(FetchDescriptor<Card>())) ?? []
-        return cards.filter { $0.deletedAt == 0 }.reduce(0) { total, card in
-            total + (card.frontInkHash != fingerprint(card.front) ? 1 : 0)
-                  + (card.backInkHash != fingerprint(card.back) ? 1 : 0)
-        }
+    /// One side of one card, as plain values so it can be hashed and read off the main thread.
+    private struct Job: Sendable {
+        let id: PersistentIdentifier
+        let side: Int            // 0 = front, 1 = back
+        let data: Data
+        let knownHash: String
     }
 
     /// Reads every side that is new or changed. `progress` reports how many are left.
+    /// Hashing and recognition happen off the main thread; only the results are applied on it.
     @MainActor static func indexAll(in context: ModelContext, progress: ((Int) -> Void)? = nil) async {
-        var left = pendingCount(in: context)
+        let cards = (try? context.fetch(FetchDescriptor<Card>())) ?? []
+        var jobs: [Job] = []
+        for card in cards where card.deletedAt == 0 {
+            jobs.append(Job(id: card.persistentModelID, side: 0, data: card.front, knownHash: card.frontInkHash))
+            jobs.append(Job(id: card.persistentModelID, side: 1, data: card.back, knownHash: card.backInkHash))
+        }
+
+        // Which sides changed? (hashes every drawing, so not on the main thread)
+        let dirty: [(job: Job, hash: String)] = await Task.detached(priority: .utility) {
+            jobs.compactMap { job in
+                let hash = fingerprint(job.data)
+                return hash == job.knownHash ? nil : (job, hash)
+            }
+        }.value
+
+        var left = dirty.count
         progress?(left)
         guard left > 0 else { return }
-        let cards = (try? context.fetch(FetchDescriptor<Card>())) ?? []
-        for card in cards where card.deletedAt == 0 {
-            for side in [Side.front, .back] {
-                let data = card.drawing(side)
-                let hash = fingerprint(data)
-                guard card.inkHash(side) != hash else { continue }
-                let text = data.isEmpty ? "" : await recognize(data)
-                card.setInk(text: text, hash: hash, side)
-                left -= 1
-                progress?(max(left, 0))
+
+        let byID = Dictionary(uniqueKeysWithValues: cards.map { ($0.persistentModelID, $0) })
+        for item in dirty {
+            let text = item.job.data.isEmpty ? "" : await recognize(item.job.data)
+            if let card = byID[item.job.id] {
+                card.setInk(text: text, hash: item.hash, item.job.side == 0 ? .front : .back)
             }
+            left -= 1
+            progress?(max(left, 0))
         }
-        context.saveReporting()
+        context.saveReporting("handwriting index")
     }
 }
 
