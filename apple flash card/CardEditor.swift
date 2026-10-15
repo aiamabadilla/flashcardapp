@@ -502,7 +502,7 @@ struct CardEditor: View {
     private func addCard() {
         Haptics.success()
         let new = deck.newCard()
-        try? context.save()   // give the card its permanent identity right away
+        context.saveReporting()   // give the card its permanent identity right away
         show(new)
     }
 

@@ -113,7 +113,7 @@ enum HandwritingIndex {
                 progress?(max(left, 0))
             }
         }
-        try? context.save()
+        context.saveReporting()
     }
 }
 

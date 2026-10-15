@@ -82,7 +82,7 @@ extension Deck {
         renumber()
         UndoCenter.shared.offer("Card deleted") { [self] in
             restoreCard(card)
-            try? context.save()
+            context.saveReporting()
         }
     }
 }
@@ -93,7 +93,7 @@ extension ModelContext {
         deck.deletedAt = Date().timeIntervalSince1970
         UndoCenter.shared.offer("Deck deleted") { [self] in
             deck.deletedAt = 0
-            try? save()
+            saveReporting()
         }
     }
 }

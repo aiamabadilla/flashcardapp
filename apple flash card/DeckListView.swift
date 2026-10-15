@@ -11,6 +11,7 @@ struct DeckListView: View {
     @State private var path: [Deck] = []
     @State private var pendingDelete: Deck?
     @State private var showingStats = false
+    @ObservedObject private var saveStatus = SaveStatus.shared
     @State private var showingTrash = false
     @State private var exported: ExportedFile?
     @State private var showingImporter = false
@@ -124,6 +125,13 @@ struct DeckListView: View {
                 case .failure(let error):
                     backupMessage = error.localizedDescription
                 }
+            }
+            .alert("Couldn't save", isPresented: Binding(
+                get: { saveStatus.failureMessage != nil },
+                set: { if !$0 { saveStatus.failureMessage = nil } })) {
+                Button("OK") { saveStatus.failureMessage = nil }
+            } message: {
+                Text(saveStatus.failureMessage ?? "")
             }
             .alert("Backup", isPresented: Binding(get: { backupMessage != nil },
                                                   set: { if !$0 { backupMessage = nil } })) {

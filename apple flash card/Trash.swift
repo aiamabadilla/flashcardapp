@@ -22,16 +22,16 @@ enum Trash {
         for card in cards where card.deletedAt > 0 && card.deletedAt < cutoff {
             context.delete(card)
         }
-        try? context.save()
+        context.saveReporting()
     }
 
     @MainActor static func deleteForever(_ deck: Deck, in context: ModelContext) {
         context.delete(deck)
-        try? context.save()
+        context.saveReporting()
     }
 
     @MainActor static func deleteForever(_ card: Card, in context: ModelContext) {
         context.delete(card)
-        try? context.save()
+        context.saveReporting()
     }
 }

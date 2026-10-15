@@ -31,12 +31,12 @@ extension Deck {
         let copy = card.contentCopy(order: card.order + 1)
         for other in liveCards where other.order > card.order { other.order += 1 }
         cards.append(copy)
-        try? context.save()
+        context.saveReporting()
         UndoCenter.shared.offer("Card duplicated") { [self] in
             cards.removeAll { $0 === copy }
             context.delete(copy)
             renumber()
-            try? context.save()
+            context.saveReporting()
         }
     }
 
@@ -44,12 +44,12 @@ extension Deck {
     @MainActor func copy(_ card: Card, to target: Deck, in context: ModelContext) {
         let copy = card.contentCopy(order: (target.liveCards.map(\.order).max() ?? -1) + 1)
         target.cards.append(copy)
-        try? context.save()
+        context.saveReporting()
         UndoCenter.shared.offer("Copied to \(target.displayTitle)") {
             target.cards.removeAll { $0 === copy }
             context.delete(copy)
             target.renumber()
-            try? context.save()
+            context.saveReporting()
         }
     }
 
@@ -69,13 +69,13 @@ extension Deck {
 
         UndoCenter.shared.offer("Moved to \(target.displayTitle)") { [self] in
             target.cards.removeAll { $0 === card }
-            try? context.save()
+            context.saveReporting()
 
             target.renumber()
             for other in liveCards where other.order >= originalOrder { other.order += 1 }
             card.order = originalOrder
             cards.append(card)
-            try? context.save()
+            context.saveReporting()
         }
     }
 

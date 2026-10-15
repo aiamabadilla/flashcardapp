@@ -48,3 +48,13 @@ final class SchemaTests: XCTestCase {
         XCTAssertEqual(SchemaV1.versionIdentifier, Schema.Version(1, 0, 0))
     }
 }
+
+@MainActor
+final class SaveReportingTests: XCTestCase {
+    func testSaveReportingSucceedsOnHealthyContext() throws {
+        let context = ModelContext(try AppStore_.makeContainer(inMemory: true))
+        context.insert(Deck(title: "ok"))
+        XCTAssertTrue(context.saveReporting("test"))
+        XCTAssertNil(SaveStatus.shared.failureMessage)
+    }
+}

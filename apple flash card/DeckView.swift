@@ -173,7 +173,7 @@ struct DeckView: View {
     private func addCard() {
         Haptics.success()
         let card = deck.newCard()
-        try? context.save()
+        context.saveReporting()
         open(card)
     }
 

@@ -71,7 +71,7 @@ struct RecentlyDeletedView: View {
                     Haptics.warning()
                     for deck in trashedDecks { context.delete(deck) }
                     for entry in cards { context.delete(entry.card) }
-                    try? context.save()
+                    context.saveReporting()
                     PhotoCleanup.run(in: context, force: true)
                 }
             } message: {
@@ -98,7 +98,7 @@ struct RecentlyDeletedView: View {
                     .font(.caption).foregroundStyle(.orange)
             }
             Spacer()
-            Button("Restore") { Haptics.success(); restore(); try? context.save() }
+            Button("Restore") { Haptics.success(); restore(); context.saveReporting() }
                 .buttonStyle(.bordered)
             Button("Delete", role: .destructive) {
                 Haptics.warning(); forever()
