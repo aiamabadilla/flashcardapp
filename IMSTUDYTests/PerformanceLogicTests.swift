@@ -183,3 +183,17 @@ final class VocabularyTests: XCTestCase {
         XCTAssertEqual(HandwritingIndex.vocabulary(from: texts, limit: 50).count, 50)
     }
 }
+
+final class LookAlikeMatchTests: XCTestCase {
+    func testPartialWordFindsMisreadWord() {
+        XCTAssertTrue(CardSearch.handwritingMatches("distal", "dis"))
+        XCTAssertTrue(CardSearch.handwritingMatches("clistal", "dis"))     // d read as "cl"
+        XCTAssertTrue(CardSearch.handwritingMatches("dlstal", "dis"))      // i read as "l"
+        XCTAssertTrue(CardSearch.handwritingMatches("clistal", "distal"))
+        XCTAssertTrue(CardSearch.handwritingMatches("rnedial", "medial"))  // m read as "rn"
+    }
+    func testLookAlikesDoNotMatchUnrelatedWords() {
+        XCTAssertFalse(CardSearch.handwritingMatches("proximal", "dis"))
+        XCTAssertFalse(CardSearch.handwritingMatches("lateral", "distal"))
+    }
+}

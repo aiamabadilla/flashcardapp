@@ -98,6 +98,8 @@ struct DeckView: View {
         .onChange(of: editor?.id) {
             // Coming back from the editor (or study), stay where that card is.
             guard editor == nil, let card = lastOpened else { return }
+            // New writing is read right away, so search can find it.
+            Task { await HandwritingIndex.indexAll(in: context) }
             DispatchQueue.main.async { proxy.scrollTo(card.id, anchor: .center) }
         }
         .onChange(of: study?.id) {

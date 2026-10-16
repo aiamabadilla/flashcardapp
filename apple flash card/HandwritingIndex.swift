@@ -11,7 +11,7 @@ enum HandwritingIndex {
     private nonisolated static let emptyMarker = "empty"
 
     /// Bump when the reading method improves, so cards are read again with the new method.
-    private nonisolated static let methodVersion = "v3"
+    private nonisolated static let methodVersion = "v4"
 
     /// A short, stable fingerprint of a drawing's bytes (and of the reading method).
     nonisolated static func fingerprint(_ data: Data) -> String {
@@ -79,7 +79,10 @@ enum HandwritingIndex {
         // would otherwise turn into ordinary English words.
         if !customWords.isEmpty { request.customWords = customWords }
         try? VNImageRequestHandler(cgImage: cgImage).perform([request])
-        return (request.results ?? []).compactMap { $0.topCandidates(1).first?.string }.joined(separator: " ")
+        // For search, every plausible reading counts: take the top few candidates of each line.
+        return (request.results ?? [])
+            .flatMap { $0.topCandidates(3).map(\.string) }
+            .joined(separator: " ")
     }
 
     /// Reads the text in a saved drawing. Runs off the main thread.
@@ -116,6 +119,21 @@ enum HandwritingIndex {
     /// Reads every side that is new or changed. `progress` reports how many are left.
     /// Hashing and recognition happen off the main thread; only the results are applied on it.
     @MainActor static func indexAll(in context: ModelContext, progress: ((Int) -> Void)? = nil) async {
+        // Launch, search and the editor closing can all ask at once; run one pass at a time and
+        // go round again if something was asked for meanwhile.
+        if indexing { rerun = true; return }
+        indexing = true
+        defer { indexing = false }
+        repeat {
+            rerun = false
+            await indexPass(in: context, progress: progress)
+        } while rerun
+    }
+
+    @MainActor private static var indexing = false
+    @MainActor private static var rerun = false
+
+    @MainActor private static func indexPass(in context: ModelContext, progress: ((Int) -> Void)?) async {
         let cards = (try? context.fetch(FetchDescriptor<Card>())) ?? []
         var jobs: [Job] = []
         for card in cards where card.deletedAt == 0 {
@@ -166,6 +184,13 @@ struct SearchHit: Identifiable {
     let deck: Deck
     /// Where the words were found, e.g. "Front · handwriting".
     let matches: [String]
+    /// What the app read from the handwriting (so a misread is easy to see), if it matched there.
+    var readAs: String? {
+        guard matches.contains(where: { $0.hasSuffix("handwriting") }) else { return nil }
+        let text = [card.frontInkText, card.backInkText].joined(separator: " ")
+        let words = Array(NSOrderedSet(array: text.split(separator: " ").map(String.init))) as? [String] ?? []
+        return words.prefix(12).joined(separator: " ")
+    }
     var id: PersistentIdentifier { card.persistentModelID }
 }
 
@@ -200,27 +225,52 @@ enum CardSearch {
     /// Recognised handwriting is rarely perfect, so every word of the query must appear in the
     /// text exactly, as part of a word, or (for longer words) within a letter or two of a word.
     nonisolated static func handwritingMatches(_ text: String, _ query: String) -> Bool {
-        let words = tokens(text)
+        let raw = tokens(text)
         let wanted = tokens(query)
-        guard !wanted.isEmpty, !words.isEmpty else { return false }
-        return wanted.allSatisfy { target in
-            words.contains { word in
-                if word.contains(target) { return true }
-                let allowed = target.count >= 8 ? 2 : (target.count >= 4 ? 1 : 0)
-                guard allowed > 0 else { return false }
-                // Compare against the word, and against a same-length slice of a longer word.
-                if abs(word.count - target.count) <= allowed,
-                   editDistance(Array(word), Array(target), limit: allowed) <= allowed { return true }
-                if word.count > target.count {
-                    let chars = Array(word)
-                    for start in 0...(chars.count - target.count) {
-                        let slice = Array(chars[start..<(start + target.count)])
-                        if editDistance(slice, Array(target), limit: allowed) <= allowed { return true }
-                    }
-                }
-                return false
+        guard !wanted.isEmpty, !raw.isEmpty else { return false }
+        // Also compare with look-alike letters merged ("cl" read for "d", "l" for "i", ...), so a
+        // misread that changes the shape of the word still matches.
+        let rawWords = raw
+        let skeletonWords = raw.map(skeleton)
+        let skeletonWanted = wanted.map(skeleton)
+        func every(_ targets: [String], in words: [String]) -> Bool {
+            targets.allSatisfy { target in words.contains { wordMatches($0, target) } }
+        }
+        return every(wanted, in: rawWords) || every(skeletonWanted, in: skeletonWords)
+    }
+
+    private nonisolated static func wordMatches(_ word: String, _ target: String) -> Bool {
+        if word.contains(target) { return true }
+        let allowed = target.count >= 8 ? 2 : (target.count >= 4 ? 1 : 0)
+        guard allowed > 0 else { return false }
+        // Compare against the word, and against a same-length slice of a longer word.
+        if abs(word.count - target.count) <= allowed,
+           editDistance(Array(word), Array(target), limit: allowed) <= allowed { return true }
+        if word.count > target.count {
+            let chars = Array(word)
+            for start in 0...(chars.count - target.count) {
+                let slice = Array(chars[start..<(start + target.count)])
+                if editDistance(slice, Array(target), limit: allowed) <= allowed { return true }
             }
         }
+        return false
+    }
+
+    /// Letters handwriting recognition commonly confuses, merged into one form.
+    nonisolated static func skeleton(_ word: String) -> String {
+        var s = word
+        for (from, to) in [("cl", "d"), ("rn", "m"), ("vv", "w"), ("ii", "u")] {
+            s = s.replacingOccurrences(of: from, with: to)
+        }
+        return String(s.map { c -> Character in
+            switch c {
+            case "l", "1", "j": "i"
+            case "0": "o"
+            case "5": "s"
+            case "q": "g"
+            default: c
+            }
+        })
     }
 
     nonisolated static func tokens(_ text: String) -> [String] {
@@ -290,6 +340,9 @@ struct SearchResultsView: View {
                                     Text(hit.deck.displayTitle).font(.headline)
                                     ForEach(hit.matches, id: \.self) {
                                         Text($0).font(.subheadline).foregroundStyle(.secondary)
+                                    }
+                                    if let read = hit.readAs {
+                                        Text("Read as: \(read)").font(.caption).foregroundStyle(.tertiary).lineLimit(2)
                                     }
                                 }
                                 Spacer()

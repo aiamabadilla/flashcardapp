@@ -115,6 +115,9 @@ struct DeckListView: View {
                 await HandwritingIndex.indexAll(in: context) { indexingLeft = $0 }
                 indexingLeft = 0
             }
+            .onChange(of: searchTarget?.id) {
+                if searchTarget == nil { Task { await HandwritingIndex.indexAll(in: context) } }
+            }
             .sheet(isPresented: $showingStats) { StatsView() }
             .sheet(isPresented: $showingTrash) { RecentlyDeletedView() }
             .sheet(item: $pdf) { file in ShareSheet(url: file.url) }
