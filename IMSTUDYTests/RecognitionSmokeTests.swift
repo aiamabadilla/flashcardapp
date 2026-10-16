@@ -87,3 +87,19 @@ final class RecognitionSmokeTests: XCTestCase {
         XCTAssertEqual(hits.first?.readAs?.isEmpty, false)
     }
 }
+
+extension RecognitionSmokeTests {
+    func testTwoLinesAreSplitAndBothRead() async throws {
+        var all = Self.drawing(word: "distal").strokes
+        let lower = Self.drawing(word: "lateral").strokes.map { s -> PKStroke in
+            var t = s; t.transform = CGAffineTransform(translationX: 0, y: 220); return t
+        }
+        all += lower
+        let drawing = PKDrawing(strokes: all)
+        XCTAssertEqual(HandwritingIndex.lineClusters(drawing).count, 2)
+        let text = await HandwritingIndex.recognize(drawing.dataRepresentation())
+        print("RECOGNISED2:", text)
+        XCTAssertTrue(CardSearch.handwritingMatches(text, "dis"), text)
+        XCTAssertTrue(CardSearch.handwritingMatches(text, "lateral"), text)
+    }
+}

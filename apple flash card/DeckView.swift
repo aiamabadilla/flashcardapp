@@ -30,6 +30,7 @@ struct DeckView: View {
     @State private var lastOpened: Card?
     @State private var pdf: ExportedFile?
     @State private var query = ""
+    @State private var readInfo: String?
     @State private var indexing = false
 
     private let columns = [GridItem(.flexible(), spacing: 24),
@@ -153,6 +154,10 @@ struct DeckView: View {
         }
         .undoBanner()
         .fullScreenCover(item: $editor) { CardEditor(deck: deck, start: $0.card) }
+        .alert("What the app read", isPresented: Binding(get: { readInfo != nil },
+                                                          set: { if !$0 { readInfo = nil } })) {
+            Button("OK") { readInfo = nil }
+        } message: { Text(readInfo ?? "") }
         .sheet(item: $pdf) { ShareSheet(url: $0.url) }
         .fullScreenCover(item: $study) { StudyView(cards: $0.cards, deck: deck) }
     }
@@ -168,6 +173,19 @@ struct DeckView: View {
         } else {
             fullMenu(for: card, in: cards)
         }
+        Button("What the App Read", systemImage: "text.viewfinder") { readInfo = Self.readSummary(card) }
+    }
+
+    /// The handwriting text stored for a card, for checking why a search did or didn't match.
+    static func readSummary(_ card: Card) -> String {
+        func line(_ name: String, _ side: Side) -> String {
+            let text = card.inkText(side).trimmingCharacters(in: .whitespacesAndNewlines)
+            let hash = card.inkHash(side)
+            if (side == .front ? card.front : card.back).isEmpty { return "\(name): no handwriting" }
+            if hash.isEmpty { return "\(name): not read yet" }
+            return text.isEmpty ? "\(name): read, but no words found" : "\(name): \(text)"
+        }
+        return [line("Front", .front), line("Back", .back)].joined(separator: "\n\n")
     }
 
     @ViewBuilder

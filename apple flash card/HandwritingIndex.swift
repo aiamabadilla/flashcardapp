@@ -11,7 +11,7 @@ enum HandwritingIndex {
     private nonisolated static let emptyMarker = "empty"
 
     /// Bump when the reading method improves, so cards are read again with the new method.
-    private nonisolated static let methodVersion = "v4"
+    private nonisolated static let methodVersion = "v5"
 
     /// A short, stable fingerprint of a drawing's bytes (and of the reading method).
     nonisolated static func fingerprint(_ data: Data) -> String {
@@ -85,11 +85,50 @@ enum HandwritingIndex {
             .joined(separator: " ")
     }
 
+    /// Splits a drawing into lines of writing: strokes that share a vertical band belong together.
+    nonisolated static func lineClusters(_ drawing: PKDrawing, limit: Int = 12) -> [PKDrawing] {
+        guard drawing.strokes.count > 1 else { return [] }
+        var groups: [(range: ClosedRange<CGFloat>, strokes: [PKStroke])] = []
+        for stroke in drawing.strokes {
+            let b = stroke.renderBounds
+            let range = b.minY...max(b.maxY, b.minY + 1)
+            if let i = groups.firstIndex(where: { $0.range.overlaps(range) }) {
+                groups[i].strokes.append(stroke)
+                groups[i].range = min(groups[i].range.lowerBound, range.lowerBound)...max(groups[i].range.upperBound, range.upperBound)
+            } else {
+                groups.append((range, [stroke]))
+            }
+        }
+        // A stroke can bridge two groups that started apart (the dot of an "i", a tall letter).
+        var merged = true
+        while merged {
+            merged = false
+            outer: for i in groups.indices {
+                for j in groups.indices where j > i && groups[i].range.overlaps(groups[j].range) {
+                    groups[i].strokes += groups[j].strokes
+                    groups[i].range = min(groups[i].range.lowerBound, groups[j].range.lowerBound)...max(groups[i].range.upperBound, groups[j].range.upperBound)
+                    groups.remove(at: j)
+                    merged = true
+                    break outer
+                }
+            }
+        }
+        guard groups.count > 1 else { return [] }       // one line: the whole-drawing pass covers it
+        return groups.sorted { $0.range.lowerBound < $1.range.lowerBound }
+            .prefix(limit).map { PKDrawing(strokes: $0.strokes) }
+    }
+
     /// Reads the text in a saved drawing. Runs off the main thread.
     static func recognize(_ data: Data, customWords: [String] = []) async -> String {
         await Task.detached(priority: .utility) {
             guard let drawing = try? PKDrawing(data: data), !drawing.bounds.isEmpty else { return "" }
-            return passes.map { read(drawing, pass: $0, customWords: customWords) }.joined(separator: " ")
+            // Each line of writing on its own (small words get lost when a whole card is read at
+            // once), then the whole drawing as a fallback.
+            let lines = lineClusters(drawing).flatMap { line in
+                passes.map { read(line, pass: $0, customWords: customWords) }
+            }
+            let whole = passes.map { read(drawing, pass: $0, customWords: customWords) }
+            return (lines + whole).joined(separator: " ")
         }.value
     }
 
@@ -121,7 +160,12 @@ enum HandwritingIndex {
     @MainActor static func indexAll(in context: ModelContext, progress: ((Int) -> Void)? = nil) async {
         // Launch, search and the editor closing can all ask at once; run one pass at a time and
         // go round again if something was asked for meanwhile.
-        if indexing { rerun = true; return }
+        if indexing {
+            // Already reading: ask for another round, and return once everything is read.
+            rerun = true
+            while indexing { try? await Task.sleep(for: .milliseconds(50)) }
+            return
+        }
         indexing = true
         defer { indexing = false }
         repeat {
