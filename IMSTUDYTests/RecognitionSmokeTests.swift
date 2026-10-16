@@ -103,3 +103,31 @@ extension RecognitionSmokeTests {
         XCTAssertTrue(CardSearch.handwritingMatches(text, "lateral"), text)
     }
 }
+
+extension RecognitionSmokeTests {
+    private static func swipe(ink: PKInk, from a: CGPoint, to b: CGPoint, width: CGFloat) -> PKStroke {
+        let pts = (0...10).map { i -> PKStrokePoint in
+            let u = CGFloat(i) / 10
+            return PKStrokePoint(location: CGPoint(x: a.x + (b.x - a.x) * u, y: a.y + (b.y - a.y) * u),
+                                 timeOffset: Double(i) * 0.02, size: CGSize(width: width, height: width),
+                                 opacity: 1, force: 1, azimuth: 0, altitude: .pi / 2)
+        }
+        return PKStroke(ink: ink, path: PKStrokePath(controlPoints: pts, creationDate: Date()))
+    }
+
+    func testHighlighterAndYellowArrowsDoNotHideTheWords() async throws {
+        var strokes = Self.drawing(word: "distal").strokes
+        let bounds = PKDrawing(strokes: strokes).bounds
+        // A thick yellow highlighter swipe right through the middle of the word...
+        strokes.append(Self.swipe(ink: PKInk(.marker, color: UIColor(red: 1, green: 0.9, blue: 0.3, alpha: 1)),
+                                  from: CGPoint(x: bounds.minX, y: bounds.midY), to: CGPoint(x: bounds.maxX, y: bounds.midY),
+                                  width: bounds.height * 0.6))
+        // ...and a yellow pen line (like an arrow) across it.
+        strokes.append(Self.swipe(ink: PKInk(.pen, color: UIColor(red: 1, green: 0.8, blue: 0.2, alpha: 1)),
+                                  from: CGPoint(x: bounds.minX, y: bounds.minY), to: CGPoint(x: bounds.maxX, y: bounds.maxY),
+                                  width: 6))
+        let text = await HandwritingIndex.recognize(PKDrawing(strokes: strokes).dataRepresentation())
+        print("RECOGNISED3:", text)
+        XCTAssertTrue(CardSearch.handwritingMatches(text, "dis"), text)
+    }
+}

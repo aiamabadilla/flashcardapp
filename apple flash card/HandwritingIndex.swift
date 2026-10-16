@@ -11,7 +11,7 @@ enum HandwritingIndex {
     private nonisolated static let emptyMarker = "empty"
 
     /// Bump when the reading method improves, so cards are read again with the new method.
-    private nonisolated static let methodVersion = "v5"
+    private nonisolated static let methodVersion = "v6"
 
     /// A short, stable fingerprint of a drawing's bytes (and of the reading method).
     nonisolated static func fingerprint(_ data: Data) -> String {
@@ -28,16 +28,31 @@ enum HandwritingIndex {
         let paddingFactor: CGFloat      // blank border, as a multiple of the writing height
     }
 
-    // Two passes: the second is a fallback for words the first misses. Results are combined,
-    // which suits search (a word found by either pass counts).
-    private nonisolated static let passes = [Pass(thicknessDivisor: 12, targetSide: 2000, paddingFactor: 1.5),
-                                 Pass(thicknessDivisor: 10, targetSide: 1600, paddingFactor: 1.0)]
+    // Real handwriting (checked against a student's cards) is read best with the plain strokes,
+    // so that is tried first. Mild and heavy thickening are fallbacks for very fine or faint
+    // writing. Results are combined, which suits search: a word found by any pass counts.
+    private nonisolated static let plain = Pass(thicknessDivisor: 0, targetSide: 2000, paddingFactor: 1.0)
+    private nonisolated static let mild = Pass(thicknessDivisor: 40, targetSide: 2000, paddingFactor: 1.5)
+    private nonisolated static let heavy = Pass(thicknessDivisor: 12, targetSide: 1600, paddingFactor: 1.0)
+    private nonisolated static let linePasses = [plain, mild]
+    private nonisolated static let wholePasses = [plain, heavy]
+
+    /// Highlighter strokes and yellow pen marks (arrows, brackets) aren't writing, and drawn as
+    /// solid black they would cover the words they mark.
+    private nonisolated static func isWriting(_ stroke: PKStroke) -> Bool {
+        if stroke.ink.inkType == .marker { return false }
+        let color = stroke.ink.color.resolvedColor(with: UITraitCollection(userInterfaceStyle: .light))
+        var hue: CGFloat = 0, sat: CGFloat = 0, bright: CGFloat = 0, alpha: CGFloat = 0
+        guard color.getHue(&hue, saturation: &sat, brightness: &bright, alpha: &alpha) else { return true }
+        let yellowish = hue > 0.08 && hue < 0.2 && sat > 0.35 && bright > 0.75
+        return !yellowish
+    }
 
     /// The same strokes with a minimum width, drawn in plain black.
     private nonisolated static func thickened(_ drawing: PKDrawing, minimumWidth: CGFloat) -> PKDrawing {
-        let strokes = drawing.strokes.map { stroke -> PKStroke in
+        let strokes = drawing.strokes.filter(isWriting).map { stroke -> PKStroke in
             let points = stroke.path.map { p in
-                let w = max(p.size.width, minimumWidth)
+                let w = max(p.size.width, minimumWidth)   // minimumWidth 0 keeps the strokes as drawn
                 return PKStrokePoint(location: p.location, timeOffset: p.timeOffset,
                                      size: CGSize(width: w, height: w), opacity: 1,
                                      force: p.force, azimuth: p.azimuth, altitude: p.altitude)
@@ -52,7 +67,9 @@ enum HandwritingIndex {
         let height = max(drawing.bounds.height, 1)
         let long = max(drawing.bounds.width, height)
         let scale = min(max(pass.targetSide / long, 1), 8)
-        let source = thickened(drawing, minimumWidth: max(1.5, height / pass.thicknessDivisor))
+        let minimumWidth = pass.thicknessDivisor > 0 ? max(1.5, height / pass.thicknessDivisor) : 0
+        let source = thickened(drawing, minimumWidth: minimumWidth)
+        guard !source.bounds.isEmpty else { return "" }
         let bounds = source.bounds.insetBy(dx: -max(24, height * pass.paddingFactor),
                                            dy: -max(24, height * pass.paddingFactor))
 
@@ -86,10 +103,11 @@ enum HandwritingIndex {
     }
 
     /// Splits a drawing into lines of writing: strokes that share a vertical band belong together.
-    nonisolated static func lineClusters(_ drawing: PKDrawing, limit: Int = 12) -> [PKDrawing] {
-        guard drawing.strokes.count > 1 else { return [] }
+    nonisolated static func lineClusters(_ drawing: PKDrawing, limit: Int = 8) -> [PKDrawing] {
+        let strokes = drawing.strokes.filter(isWriting)
+        guard strokes.count > 1 else { return [] }
         var groups: [(range: ClosedRange<CGFloat>, strokes: [PKStroke])] = []
-        for stroke in drawing.strokes {
+        for stroke in strokes {
             let b = stroke.renderBounds
             let range = b.minY...max(b.maxY, b.minY + 1)
             if let i = groups.firstIndex(where: { $0.range.overlaps(range) }) {
@@ -123,12 +141,18 @@ enum HandwritingIndex {
         await Task.detached(priority: .utility) {
             guard let drawing = try? PKDrawing(data: data), !drawing.bounds.isEmpty else { return "" }
             // Each line of writing on its own (small words get lost when a whole card is read at
-            // once), then the whole drawing as a fallback.
-            let lines = lineClusters(drawing).flatMap { line in
-                passes.map { read(line, pass: $0, customWords: customWords) }
+            // once), then the whole drawing. The plain reading comes first; thicker fallbacks are
+            // only tried when it finds nothing, which keeps reading a big deck quick.
+            func firstReading(_ d: PKDrawing, _ passes: [Pass]) -> String {
+                for pass in passes {
+                    let text = read(d, pass: pass, customWords: customWords)
+                    if !text.trimmingCharacters(in: .whitespaces).isEmpty { return text }
+                }
+                return ""
             }
-            let whole = passes.map { read(drawing, pass: $0, customWords: customWords) }
-            return (lines + whole).joined(separator: " ")
+            let lines = lineClusters(drawing).map { firstReading($0, linePasses) }
+            let whole = firstReading(drawing, wholePasses)
+            return (lines + [whole]).joined(separator: " ")
         }.value
     }
 
@@ -158,24 +182,25 @@ enum HandwritingIndex {
     /// Reads every side that is new or changed. `progress` reports how many are left.
     /// Hashing and recognition happen off the main thread; only the results are applied on it.
     @MainActor static func indexAll(in context: ModelContext, progress: ((Int) -> Void)? = nil) async {
-        // Launch, search and the editor closing can all ask at once; run one pass at a time and
-        // go round again if something was asked for meanwhile.
-        if indexing {
+        // Launch, search and the editor closing can all ask at once; run one pass at a time per
+        // store and go round again if something was asked for meanwhile.
+        let key = ObjectIdentifier(context)
+        if running.contains(key) {
             // Already reading: ask for another round, and return once everything is read.
-            rerun = true
-            while indexing { try? await Task.sleep(for: .milliseconds(50)) }
+            rerun.insert(key)
+            while running.contains(key) { try? await Task.sleep(for: .milliseconds(50)) }
             return
         }
-        indexing = true
-        defer { indexing = false }
+        running.insert(key)
+        defer { running.remove(key) }
         repeat {
-            rerun = false
+            rerun.remove(key)
             await indexPass(in: context, progress: progress)
-        } while rerun
+        } while rerun.contains(key)
     }
 
-    @MainActor private static var indexing = false
-    @MainActor private static var rerun = false
+    @MainActor private static var running: Set<ObjectIdentifier> = []
+    @MainActor private static var rerun: Set<ObjectIdentifier> = []
 
     @MainActor private static func indexPass(in context: ModelContext, progress: ((Int) -> Void)?) async {
         let cards = (try? context.fetch(FetchDescriptor<Card>())) ?? []
