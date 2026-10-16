@@ -41,6 +41,24 @@ enum InkRenderer {
         cache.setObject(image, forKey: key(data, dark: dark, refWidth: refWidth, scale: scale))
     }
 
+    /// Scale used for card previews so small cards stay sharp: about 1000 px across the card.
+    static func previewScale(refWidth: Double) -> CGFloat {
+        refWidth > 0 ? max(1, min(1000 / refWidth, 3)) : 2
+    }
+
+    /// The card width a side's ink is positioned against (the same rule CardFace uses).
+    static func referenceWidth(for card: Card) -> Double {
+        card.inkRefWidth > 0 ? card.inkRefWidth : Card.lastKnownCardWidth
+    }
+
+    /// Renders a side's ink into the cache now, so a CardFace drawn straight afterwards (for
+    /// example by an ImageRenderer, which does not wait for background work) already has it.
+    static func prewarm(_ card: Card, side: Side, dark: Bool) {
+        let refWidth = referenceWidth(for: card)
+        _ = image(card.drawing(side), dark: dark, refWidth: refWidth,
+                  scale: previewScale(refWidth: refWidth))
+    }
+
     /// Synchronous convenience (cache, then render). Used where an image is needed immediately.
     static func image(_ data: Data, dark: Bool, refWidth: Double = 0, scale: CGFloat = 2) -> UIImage? {
         if let hit = cached(data, dark: dark, refWidth: refWidth, scale: scale) { return hit }
@@ -59,8 +77,7 @@ struct DrawingImage: View {
 
     var body: some View {
         let dark = scheme == .dark
-        // Scale so the small previews stay sharp: about 1000 px across the card.
-        let scale: CGFloat = refWidth > 0 ? max(1, min(1000 / refWidth, 3)) : 2
+        let scale = InkRenderer.previewScale(refWidth: refWidth)
         let image = InkRenderer.cached(data, dark: dark, refWidth: refWidth, scale: scale) ?? rendered
 
         Group {
@@ -133,6 +150,8 @@ struct CardFace: View {
     let side: Side
     var corner: CGFloat = 14
     var inset: CGFloat = 12
+    /// Study mode and exports show photos at full strength, ignoring the editor's opacity slider.
+    var fullOpacityImages = false
     @Environment(\.colorScheme) private var scheme
 
     var body: some View {
@@ -140,8 +159,10 @@ struct CardFace: View {
             ZStack {
                 RoundedRectangle(cornerRadius: corner).fill(Color.paper(scheme))
                 if card.isLined(side) { CardLines() }
-                ForEach(card.imageItems(side)) { PlacedImage(item: $0, card: geo.size) }
-                DrawingImage(data: card.drawing(side), refWidth: card.inkRefWidth > 0 ? card.inkRefWidth : Card.lastKnownCardWidth, padding: inset)
+                ForEach(card.imageItems(side)) {
+                    PlacedImage(item: $0, card: geo.size, ignoreOpacity: fullOpacityImages)
+                }
+                DrawingImage(data: card.drawing(side), refWidth: InkRenderer.referenceWidth(for: card), padding: inset)
                 ForEach(card.textItems(side)) { PlacedText(item: $0, card: geo.size) }
             }
         }

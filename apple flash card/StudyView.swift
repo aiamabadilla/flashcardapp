@@ -13,10 +13,14 @@ struct StudyView: View {
     @State private var missedOnce: Set<ObjectIdentifier> = []
     @State private var shownAt = Date()
     @ObservedObject private var log = StudyLog.shared
+    /// The deck the cards belong to; the editor needs it. Editing opens one card at a time.
+    private let deck: Deck
+    @State private var editing: EditorTarget?
 
-    init(cards: [Card]) {
+    init(cards: [Card], deck: Deck) {
         _queue = State(initialValue: cards)
         total = cards.count
+        self.deck = deck
     }
 
     private var current: Card? { queue.first }
@@ -32,7 +36,8 @@ struct StudyView: View {
                 ProgressView(value: Double(known), total: Double(max(total, 1)))
                     .padding(.horizontal, 40)
 
-                CardFace(card: card, side: showingBack ? .back : .front, corner: 18, inset: 24)
+                CardFace(card: card, side: showingBack ? .back : .front, corner: 18, inset: 24,
+                         fullOpacityImages: true)
                     .shadow(radius: 10)
                     .padding(.horizontal, 40)
                     .rotation3DEffect(.degrees(angle), axis: (x: 0, y: 1, z: 0))
@@ -73,6 +78,9 @@ struct StudyView: View {
             Spacer()
         }
         .padding(.top, 24)
+        .fullScreenCover(item: $editing) {
+            CardEditor(deck: deck, start: $0.card, singleCard: true)
+        }
     }
 
     private var header: some View {
@@ -84,7 +92,21 @@ struct StudyView: View {
             Text(current == nil ? "Session Complete" : "\(known) of \(total) known")
                 .font(.headline)
             Spacer()
-            Color.clear.frame(width: 100, height: 1)
+            HStack(spacing: 20) {
+                if let card = current {
+                    Button { Haptics.tap(); editing = EditorTarget(card: card) } label: {
+                        Label("Edit Card", systemImage: "pencil").labelStyle(.iconOnly)
+                    }
+                    Button { Haptics.tap(); card.isStarred.toggle() } label: {
+                        Label(card.isStarred ? "Unstar Card" : "Star Card",
+                              systemImage: card.isStarred ? "star.fill" : "star")
+                            .labelStyle(.iconOnly)
+                            .foregroundStyle(card.isStarred ? Color.yellow : Color.accentColor)
+                    }
+                }
+            }
+            .font(.title3)
+            .frame(width: 100, alignment: .trailing)
         }
         .padding(.horizontal)
     }

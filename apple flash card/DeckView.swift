@@ -11,6 +11,17 @@ struct StudyTarget: Identifiable {
     let cards: [Card]
 }
 
+/// Which cards the grid currently has on screen. A plain class so changing it never redraws.
+final class VisibleCards {
+    var ids: Set<PersistentIdentifier> = []
+}
+
+/// How far along a PDF export is.
+struct PDFProgress: Equatable {
+    var done: Int
+    var total: Int
+}
+
 struct DeckView: View {
     @Bindable var deck: Deck
     @Environment(\.modelContext) private var context
@@ -28,6 +39,18 @@ struct DeckView: View {
     @State private var editor: EditorTarget?
     @State private var study: StudyTarget?
 
+    // Scroll position: the card last edited, and which cards are on screen (held without
+    // observation, so scrolling never re-renders the grid just to keep this list).
+    @State private var lastEditedID: PersistentIdentifier?
+    @State private var visibility = VisibleCards()
+
+    // Spreadsheet import and PDF export.
+    @State private var showingSheetImporter = false
+    @State private var exportedPDF: ExportedFile?
+    @State private var pdfProgress: PDFProgress?
+    @State private var pdfTask: Task<Void, Never>?
+    @State private var message: String?
+
     private let columns = [GridItem(.flexible(), spacing: 24),
                            GridItem(.flexible(), spacing: 24)]
 
@@ -37,6 +60,7 @@ struct DeckView: View {
         let due = deck.dueCards
         let visible = filter == .all ? all : starred
 
+        ScrollViewReader { proxy in
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
                 TextField("Deck title", text: $deck.title)
@@ -71,6 +95,9 @@ struct DeckView: View {
                     }
                     ForEach(visible) { card in
                         CardThumbnail(card: card)
+                            .id(card.persistentModelID)
+                            .onAppear { visibility.ids.insert(card.persistentModelID) }
+                            .onDisappear { visibility.ids.remove(card.persistentModelID) }
                             .onTapGesture { Haptics.tap(); open(card) }
                             .contextMenu { menu(for: card, in: all) }
                     }
@@ -83,10 +110,27 @@ struct DeckView: View {
             }
             .padding(32)
         }
+        // After the editor closes, keep the grid on the card that was being edited. If that card
+        // is still on screen nothing moves; if the grid lost its place, bring the card back.
+        .onChange(of: editor?.id) { _, newValue in
+            guard newValue == nil, let id = lastEditedID, !visibility.ids.contains(id) else { return }
+            DispatchQueue.main.async { proxy.scrollTo(id, anchor: .center) }
+        }
+        }
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItemGroup(placement: .primaryAction) {
                 AppearanceMenu()
+                Menu {
+                    Button("Import Spreadsheet…", systemImage: "tablecells") {
+                        Haptics.tap()
+                        showingSheetImporter = true
+                    }
+                    Button("Export as PDF", systemImage: "doc.richtext") { exportPDF() }
+                        .disabled(all.isEmpty || pdfTask != nil)
+                } label: {
+                    Label("Import and Export", systemImage: "ellipsis.circle")
+                }
                 Button(role: .destructive) { Haptics.tap(); confirmingDelete = true } label: {
                     Label("Delete Deck", systemImage: "trash")
                 }
@@ -118,8 +162,77 @@ struct DeckView: View {
             }
         }
         .undoBanner()
-        .fullScreenCover(item: $editor) { CardEditor(deck: deck, start: $0.card) }
-        .fullScreenCover(item: $study) { StudyView(cards: $0.cards) }
+        .fullScreenCover(item: $editor) { target in
+            CardEditor(deck: deck, start: target.card) { lastEditedID = $0.persistentModelID }
+        }
+        .fullScreenCover(item: $study) { StudyView(cards: $0.cards, deck: deck) }
+        .fileImporter(isPresented: $showingSheetImporter, allowedContentTypes: SheetImport.allowedTypes) { result in
+            importSheet(result)
+        }
+        .sheet(item: $exportedPDF) { file in
+            ShareSheet(url: file.url) { completed in
+                if completed { Haptics.success() }
+            }
+        }
+        .overlay {
+            if let progress = pdfProgress {
+                VStack(spacing: 12) {
+                    ProgressView(value: Double(progress.done), total: Double(max(progress.total, 1)))
+                        .frame(width: 220)
+                    Text("Creating PDF…").font(.headline)
+                    Button("Cancel", role: .cancel) { pdfTask?.cancel() }
+                }
+                .padding(24)
+                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16))
+            }
+        }
+        .alert("Import and Export", isPresented: Binding(get: { message != nil },
+                                                          set: { if !$0 { message = nil } })) {
+            Button("OK") { message = nil }
+        } message: {
+            Text(message ?? "")
+        }
+    }
+
+    private func importSheet(_ result: Result<URL, Error>) {
+        switch result {
+        case .success(let url):
+            do {
+                let rows = try SheetImport.readRows(at: url)
+                let added = SheetImport.addCards(rows, to: deck, in: context)
+                SheetImport.offerUndo(added, in: deck, context: context)
+                Haptics.success()
+                message = "Added \(plural(added.count, "card")) from \(url.lastPathComponent)."
+            } catch {
+                Haptics.warning()
+                message = error.localizedDescription
+            }
+        case .failure(let error):
+            message = error.localizedDescription
+        }
+    }
+
+    private func exportPDF() {
+        guard pdfTask == nil else { return }
+        Haptics.tap()
+        pdfProgress = PDFProgress(done: 0, total: max(deck.liveCards.count * 2, 1))
+        pdfTask = Task {
+            defer {
+                pdfTask = nil
+                pdfProgress = nil
+            }
+            do {
+                let url = try await PDFExport.export(deck) { done, total in
+                    pdfProgress = PDFProgress(done: done, total: total)
+                }
+                exportedPDF = ExportedFile(url: url, decks: 1, cards: deck.liveCards.count)
+            } catch is CancellationError {
+                // Cancelled by the person; nothing to report.
+            } catch {
+                Haptics.warning()
+                message = error.localizedDescription
+            }
+        }
     }
 
     @ViewBuilder
@@ -162,6 +275,7 @@ struct DeckView: View {
     }
 
     private func open(_ card: Card) {
+        lastEditedID = card.persistentModelID
         editor = EditorTarget(card: card)
     }
 

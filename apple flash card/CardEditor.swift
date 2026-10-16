@@ -29,8 +29,16 @@ struct CardEditor: View {
     @State private var inkBounds: CGRect = .zero
     @StateObject private var viewport = Viewport()
 
-    init(deck: Deck, start: Card) {
+    /// Edit just this one card (used from Study): no previous/next, new card or delete, so the
+    /// study queue can't change underneath the session.
+    private let singleCard: Bool
+    /// Told whenever the card being edited changes, so the deck can scroll back to it.
+    private let onCardChange: ((Card) -> Void)?
+
+    init(deck: Deck, start: Card, singleCard: Bool = false, onCardChange: ((Card) -> Void)? = nil) {
         self.deck = deck
+        self.singleCard = singleCard
+        self.onCardChange = onCardChange
         _card = State(initialValue: start)
     }
 
@@ -86,6 +94,8 @@ struct CardEditor: View {
             if let id = selectedImageID, imageDraft.start == nil { imageDraft.item = card.imageItem(id) }
         }
         .onChange(of: collapseKey) { canvasEpoch += 1 }
+        .onAppear { onCardChange?(card) }
+        .onChange(of: card.persistentModelID) { onCardChange?(card) }
         .onChange(of: selectedImageID) {
             imageDraft.item = selectedImageID.flatMap { card.imageItem($0) }
             imageDraft.start = nil
@@ -169,13 +179,18 @@ struct CardEditor: View {
             Spacer()
             VStack(spacing: 2) {
                 Text(showingFront ? "Front" : "Back").font(.headline)
-                Text("Card \(index + 1) of \(count)")
-                    .font(.caption).foregroundStyle(.secondary)
+                if !singleCard {
+                    Text("Card \(index + 1) of \(count)")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
             }
             Spacer()
             Button(role: .destructive) { Haptics.tap(); confirmingDelete = true } label: {
                 Label("Delete Card", systemImage: "trash").labelStyle(.iconOnly)
             }
+            .opacity(singleCard ? 0 : 1)
+            .disabled(singleCard)
+            .accessibilityHidden(singleCard)
             .frame(width: 80, alignment: .trailing)
             .confirmationDialog("Move this card to Recently Deleted?", isPresented: $confirmingDelete,
                                 titleVisibility: .visible) {
@@ -268,23 +283,27 @@ struct CardEditor: View {
         VStack(spacing: 16) {
             // Row 1: previous / rotate / next
             HStack(spacing: 16) {
-                Button { go(to: index - 1) } label: {
-                    Label("Previous", systemImage: "chevron.left").frame(width: buttonWidth)
+                if !singleCard {
+                    Button { go(to: index - 1) } label: {
+                        Label("Previous", systemImage: "chevron.left").frame(width: buttonWidth)
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(index == 0)
                 }
-                .buttonStyle(.bordered)
-                .disabled(index == 0)
 
                 Button { flip() } label: {
                     Label("Rotate", systemImage: "arrow.triangle.2.circlepath").frame(width: buttonWidth)
                 }
                 .buttonStyle(.borderedProminent)
 
-                Button { go(to: index + 1) } label: {
-                    Label("Next", systemImage: "chevron.right")
-                        .labelStyle(TrailingIconLabelStyle()).frame(width: buttonWidth)
+                if !singleCard {
+                    Button { go(to: index + 1) } label: {
+                        Label("Next", systemImage: "chevron.right")
+                            .labelStyle(TrailingIconLabelStyle()).frame(width: buttonWidth)
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(index >= count - 1)
                 }
-                .buttonStyle(.bordered)
-                .disabled(index >= count - 1)
             }
 
             // Row 2: per-card options (lines and typed text apply to the side shown)
@@ -306,11 +325,13 @@ struct CardEditor: View {
             }
 
             // Row 3: add the next card
-            Button { addCard() } label: {
-                Label("New Card", systemImage: "plus").frame(width: 140 * 5 + 64)
+            if !singleCard {
+                Button { addCard() } label: {
+                    Label("New Card", systemImage: "plus").frame(width: 140 * 5 + 64)
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(.green)
             }
-            .buttonStyle(.borderedProminent)
-            .tint(.green)
         }
         .controlSize(.large)
     }

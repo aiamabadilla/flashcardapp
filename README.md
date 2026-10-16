@@ -24,6 +24,11 @@ An iPad flashcard app built with SwiftUI, SwiftData and PencilKit (iOS 17+, iPad
 - Thumbnails show the front with a small preview of the back
 - Long-press a card to edit, move earlier/later, or delete
 - Spaced-repetition study (Leitner boxes): flip a card, then mark Know It / Don't Know. Known cards come back after 1, 2, 4, 8 then 16 days; missed cards return a few cards later in the session and stay due. Study Due / All / Starred, with due-new-mastered counts on each deck
+- While studying, tap the pencil to edit the current card (editor opens on just that card) or the star to star or unstar it. Photos always show at full strength in Study; the opacity slider only affects the editor
+- Import a spreadsheet as flashcards: `.xlsx` (first sheet), `.csv` or `.tsv`. Column A is the front, column B the back, one card per row, text only, so it can be annotated in the app. In a deck: ••• menu, Import Spreadsheet (adds the cards at the top, with Undo). On the deck list: Backup menu, Import Spreadsheet as New Deck. Read on the device; nothing is uploaded
+- Export a deck as a PDF (••• menu inside a deck): one landscape page for the front of each card and one for its back, on light paper for printing
+- New cards start with a blank front and a lined back (existing cards are not changed; the Lines button still toggles either side)
+- After closing the editor the deck grid stays on the card you were editing
 - Every stroke autosaves to SwiftData
 - Rename decks inline
 

@@ -83,6 +83,7 @@ enum ItemCache {
         // New cards go first, right after the add tile, so existing cards shift along.
         for other in liveCards { other.order += 1 }
         let card = Card(order: 0)
+        card.applyNewCardPaper()
         cards.append(card)
         return card
     }
@@ -150,6 +151,14 @@ enum ItemCache {
     }
 
     var inTrash: Bool { deletedAt > 0 }
+
+    /// Paper for brand new cards: blank front, lined back. This is applied when a card is created
+    /// rather than changing the stored defaults above, so existing cards and old stores keep
+    /// exactly what they had.
+    func applyNewCardPaper() {
+        frontLined = false
+        backLined = true
+    }
 
     func drawing(_ side: Side) -> Data { side == .front ? front : back }
     func isLined(_ side: Side) -> Bool { side == .front ? frontLined : backLined }

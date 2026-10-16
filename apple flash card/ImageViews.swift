@@ -99,6 +99,9 @@ enum ImageStore {
 struct PlacedImage: View {
     let item: ImageItem
     let card: CGSize
+    /// Study mode shows photos fully opaque. The opacity setting only exists to line a photo up
+    /// with writing while editing.
+    var ignoreOpacity = false
 
     var body: some View {
         let width = item.w * card.width
@@ -108,7 +111,7 @@ struct PlacedImage: View {
                     .resizable()
                     .frame(width: width, height: width * item.aspect)
                     .clipShape(RoundedRectangle(cornerRadius: 6))
-                    .opacity(item.opacity ?? 1)
+                    .opacity(ignoreOpacity ? 1 : (item.opacity ?? 1))
                     .offset(x: item.x * card.width, y: item.y * card.height)
             }
         }

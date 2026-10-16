@@ -15,6 +15,9 @@ struct DeckListView: View {
     @State private var showingTrash = false
     @State private var exported: ExportedFile?
     @State private var showingImporter = false
+    /// What the file picker is for. One picker serves both (SwiftUI only honors one per view).
+    private enum ImportKind { case backup, spreadsheet }
+    @State private var importKind: ImportKind = .backup
     @State private var backupMessage: String?
     @State private var query = ""
     /// The query after a short pause in typing; searches run on this, not on every keystroke.
@@ -119,7 +122,12 @@ struct DeckListView: View {
                     backupMessage = "Backup complete: \(plural(file.decks, "deck")), \(plural(file.cards, "card"))."
                 }
             }
-            .fileImporter(isPresented: $showingImporter, allowedContentTypes: [.item]) { result in
+            .fileImporter(isPresented: $showingImporter,
+                          allowedContentTypes: importKind == .spreadsheet ? SheetImport.allowedTypes : [.item]) { result in
+                if importKind == .spreadsheet {
+                    importSpreadsheet(result)
+                    return
+                }
                 switch result {
                 case .success(let url):
                     do {
@@ -141,7 +149,7 @@ struct DeckListView: View {
             } message: {
                 Text(saveStatus.failureMessage ?? "")
             }
-            .alert("Backup", isPresented: Binding(get: { backupMessage != nil },
+            .alert("Backup and Import", isPresented: Binding(get: { backupMessage != nil },
                                                   set: { if !$0 { backupMessage = nil } })) {
                 Button("OK") { backupMessage = nil }
             } message: {
@@ -173,6 +181,12 @@ struct DeckListView: View {
                         .disabled(decks.isEmpty)
                         Button("Restore from Backup…", systemImage: "square.and.arrow.down") {
                             Haptics.tap()
+                            importKind = .backup
+                            showingImporter = true
+                        }
+                        Button("Import Spreadsheet as New Deck…", systemImage: "tablecells") {
+                            Haptics.tap()
+                            importKind = .spreadsheet
                             showingImporter = true
                         }
                     } label: {
@@ -200,6 +214,27 @@ struct DeckListView: View {
             Haptics.tap()
         } catch {
             backupMessage = "Couldn't create the backup: \(error.localizedDescription)"
+        }
+    }
+
+    /// A spreadsheet becomes a new deck named after the file: column A is each card's front,
+    /// column B its back, one card per row.
+    private func importSpreadsheet(_ result: Result<URL, Error>) {
+        switch result {
+        case .success(let url):
+            do {
+                let rows = try SheetImport.readRows(at: url)
+                let deck = Deck(title: url.deletingPathExtension().lastPathComponent)
+                context.insert(deck)
+                let added = SheetImport.addCards(rows, to: deck, in: context)
+                Haptics.success()
+                backupMessage = "Created \"\(deck.displayTitle)\" with \(plural(added.count, "card"))."
+            } catch {
+                Haptics.warning()
+                backupMessage = error.localizedDescription
+            }
+        case .failure(let error):
+            backupMessage = error.localizedDescription
         }
     }
 
