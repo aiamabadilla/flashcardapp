@@ -123,7 +123,7 @@ nonisolated enum SpreadsheetParser {
 
 // MARK: - XML
 
-private final class SharedStringsParser: NSObject, XMLParserDelegate {
+private nonisolated final class SharedStringsParser: NSObject, XMLParserDelegate {
     var strings: [String] = []
     private var current = ""
     private var inText = false
@@ -149,7 +149,7 @@ private final class SharedStringsParser: NSObject, XMLParserDelegate {
     }
 }
 
-private final class SheetParser: NSObject, XMLParserDelegate {
+private nonisolated final class SheetParser: NSObject, XMLParserDelegate {
     var rows: [[String]] = []
     private let strings: [String]
     private var row: [Int: String] = [:]

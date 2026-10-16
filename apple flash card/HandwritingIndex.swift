@@ -8,13 +8,13 @@ import CryptoKit
 /// recognised text on the card, so search can find cards by what you wrote. A side is
 /// only read again after its ink changes.
 enum HandwritingIndex {
-    private static let emptyMarker = "empty"
+    private nonisolated static let emptyMarker = "empty"
 
     /// Bump when the reading method improves, so cards are read again with the new method.
-    private static let methodVersion = "v2"
+    private nonisolated static let methodVersion = "v2"
 
     /// A short, stable fingerprint of a drawing's bytes (and of the reading method).
-    static func fingerprint(_ data: Data) -> String {
+    nonisolated static func fingerprint(_ data: Data) -> String {
         guard !data.isEmpty else { return emptyMarker }
         let digest = SHA256.hash(data: data).prefix(8).map { String(format: "%02x", $0) }.joined()
         return "\(methodVersion)-\(digest)"
