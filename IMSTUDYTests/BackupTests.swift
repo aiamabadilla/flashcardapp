@@ -151,4 +151,3 @@ final class BackupTests: XCTestCase {
     }
 }
 
-extension Backup.BackupError: @retroactive Equatable {}
