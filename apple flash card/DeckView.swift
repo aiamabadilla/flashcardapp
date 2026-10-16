@@ -27,6 +27,7 @@ struct DeckView: View {
     // it, which used to make the editor close and reopen mid-writing.
     @State private var editor: EditorTarget?
     @State private var study: StudyTarget?
+    @State private var lastOpened: Card?
 
     private let columns = [GridItem(.flexible(), spacing: 24),
                            GridItem(.flexible(), spacing: 24)]
@@ -37,6 +38,7 @@ struct DeckView: View {
         let due = deck.dueCards
         let visible = filter == .all ? all : starred
 
+        ScrollViewReader { proxy in
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
                 TextField("Deck title", text: $deck.title)
@@ -83,6 +85,16 @@ struct DeckView: View {
             }
             .padding(32)
         }
+        .onChange(of: editor?.id) {
+            // Coming back from the editor (or study), stay where that card is.
+            guard editor == nil, let card = lastOpened else { return }
+            DispatchQueue.main.async { proxy.scrollTo(card.id, anchor: .center) }
+        }
+        .onChange(of: study?.id) {
+            guard study == nil, let card = lastOpened else { return }
+            DispatchQueue.main.async { proxy.scrollTo(card.id, anchor: .center) }
+        }
+        }
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItemGroup(placement: .primaryAction) {
@@ -119,7 +131,7 @@ struct DeckView: View {
         }
         .undoBanner()
         .fullScreenCover(item: $editor) { CardEditor(deck: deck, start: $0.card) }
-        .fullScreenCover(item: $study) { StudyView(cards: $0.cards) }
+        .fullScreenCover(item: $study) { StudyView(cards: $0.cards, deck: deck) }
     }
 
     @ViewBuilder
@@ -162,6 +174,7 @@ struct DeckView: View {
     }
 
     private func open(_ card: Card) {
+        lastOpened = card
         editor = EditorTarget(card: card)
     }
 

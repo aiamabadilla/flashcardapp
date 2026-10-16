@@ -42,3 +42,20 @@ struct AppearanceMenu: View {
         .onChange(of: appearance) { Haptics.select() }
     }
 }
+
+/// Where new cards start: lined or blank, per side.
+struct NewCardLinesMenu: View {
+    @AppStorage(NewCardDefaults.frontKey) private var front = false
+    @AppStorage(NewCardDefaults.backKey) private var back = true
+
+    var body: some View {
+        Menu {
+            Toggle("Lined front", isOn: $front)
+            Toggle("Lined back", isOn: $back)
+        } label: {
+            Label("New Card Lines", systemImage: "text.justify")
+        }
+        .onChange(of: front) { Haptics.select() }
+        .onChange(of: back) { Haptics.select() }
+    }
+}

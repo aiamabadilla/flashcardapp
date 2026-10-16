@@ -14,7 +14,11 @@ struct StudyView: View {
     @State private var shownAt = Date()
     @ObservedObject private var log = StudyLog.shared
 
-    init(cards: [Card]) {
+    let deck: Deck
+    @State private var editing: EditorTarget?
+
+    init(cards: [Card], deck: Deck) {
+        self.deck = deck
         _queue = State(initialValue: cards)
         total = cards.count
     }
@@ -73,6 +77,7 @@ struct StudyView: View {
             Spacer()
         }
         .padding(.top, 24)
+        .fullScreenCover(item: $editing) { CardEditor(deck: deck, start: $0.card) }
     }
 
     private var header: some View {
@@ -84,7 +89,23 @@ struct StudyView: View {
             Text(current == nil ? "Session Complete" : "\(known) of \(total) known")
                 .font(.headline)
             Spacer()
-            Color.clear.frame(width: 100, height: 1)
+            if let card = current {
+                HStack(spacing: 18) {
+                    Button { Haptics.select(); card.isStarred.toggle() } label: {
+                        Image(systemName: card.isStarred ? "star.fill" : "star")
+                            .foregroundStyle(card.isStarred ? .yellow : .accentColor)
+                    }
+                    .accessibilityLabel(card.isStarred ? "Unstar card" : "Star card")
+                    Button { Haptics.tap(); editing = EditorTarget(card: card) } label: {
+                        Image(systemName: "pencil")
+                    }
+                    .accessibilityLabel("Edit card")
+                }
+                .font(.title3)
+                .frame(width: 100, alignment: .trailing)
+            } else {
+                Color.clear.frame(width: 100, height: 1)
+            }
         }
         .padding(.horizontal)
     }

@@ -16,6 +16,7 @@ struct DeckListView: View {
     @State private var exported: ExportedFile?
     @State private var showingImporter = false
     @State private var backupMessage: String?
+    @State private var showingSpreadsheet = false
     @State private var query = ""
     /// The query after a short pause in typing; searches run on this, not on every keystroke.
     @State private var settledQuery = ""
@@ -134,6 +135,22 @@ struct DeckListView: View {
                     backupMessage = error.localizedDescription
                 }
             }
+            .background(Color.clear.fileImporter(isPresented: $showingSpreadsheet,
+                                                 allowedContentTypes: SpreadsheetImporter.types) { result in
+                switch result {
+                case .success(let url):
+                    do {
+                        let r = try SpreadsheetImporter.importFile(at: url, into: context)
+                        Haptics.success()
+                        backupMessage = "Imported \(plural(r.cards, "card")) into “\(r.title)”."
+                    } catch {
+                        Haptics.warning()
+                        backupMessage = error.localizedDescription
+                    }
+                case .failure(let error):
+                    backupMessage = error.localizedDescription
+                }
+            })
             .alert("Couldn't save", isPresented: Binding(
                 get: { saveStatus.failureMessage != nil },
                 set: { if !$0 { saveStatus.failureMessage = nil } })) {
@@ -167,6 +184,10 @@ struct DeckListView: View {
                         Label("Stats", systemImage: "chart.bar.xaxis")
                     }
                     Menu {
+                        Button("Import Spreadsheet…", systemImage: "tablecells") {
+                            Haptics.tap()
+                            showingSpreadsheet = true
+                        }
                         Button("Back Up All Decks", systemImage: "square.and.arrow.up") {
                             export(decks, name: "IMSTUDY Backup")
                         }
@@ -179,6 +200,7 @@ struct DeckListView: View {
                         Label("Backup", systemImage: "externaldrive")
                     }
                     AppearanceMenu()
+                    NewCardLinesMenu()
                     Button { newDeck() } label: { Label("New Deck", systemImage: "plus") }
                         .keyboardShortcut("n", modifiers: .command)
                 }

@@ -3,6 +3,14 @@ import Foundation
 
 nonisolated enum Side: Sendable { case front, back }
 
+/// Whether new cards start with ruled lines. Default: blank front, lined back.
+enum NewCardDefaults {
+    static let frontKey = "newCardFrontLined"
+    static let backKey = "newCardBackLined"
+    static var frontLined: Bool { UserDefaults.standard.object(forKey: frontKey) as? Bool ?? false }
+    static var backLined: Bool { UserDefaults.standard.object(forKey: backKey) as? Bool ?? true }
+}
+
 /// One typed text box on a card side. Position and size are fractions of the card
 /// (`size` is the font size as a fraction of the card width), so the box looks the same
 /// in the editor, thumbnails and Study mode.
@@ -14,6 +22,8 @@ nonisolated struct TextItem: Codable, Identifiable, Equatable, Sendable {
     var y = 0.05
     var w = 0.6
     var size = 0.03
+    /// Centered text (used by spreadsheet import). Optional so older saved boxes decode unchanged.
+    var centered: Bool?
 }
 
 /// A photo placed on a card side. Position and width are fractions of the card;
@@ -83,6 +93,8 @@ enum ItemCache {
         // New cards go first, right after the add tile, so existing cards shift along.
         for other in liveCards { other.order += 1 }
         let card = Card(order: 0)
+        card.frontLined = NewCardDefaults.frontLined
+        card.backLined = NewCardDefaults.backLined
         cards.append(card)
         return card
     }

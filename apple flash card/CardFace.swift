@@ -117,7 +117,8 @@ struct PlacedText: View {
             Text(item.text)
                 .font(.system(size: item.size * card.width))
                 .padding(.horizontal, 5).padding(.vertical, 8)
-                .frame(width: item.w * card.width, alignment: .leading)
+                .multilineTextAlignment(item.centered == true ? .center : .leading)
+                .frame(width: item.w * card.width, alignment: item.centered == true ? .center : .leading)
                 .contentShape(Rectangle())
                 .onTapGesture { onTap?() }
                 .offset(x: item.x * card.width, y: item.y * card.height)
@@ -259,6 +260,7 @@ struct TextBoxEditor: View {
         Text(draft.text + " ")
             .font(.system(size: fontSize))
             .padding(.horizontal, 5).padding(.vertical, 8)
+            .multilineTextAlignment(draft.centered == true ? .center : .leading)
             .frame(width: width, alignment: .leading)
             .frame(minHeight: fontSize * 2.2, alignment: .topLeading)
             .fixedSize(horizontal: false, vertical: true)
@@ -266,6 +268,7 @@ struct TextBoxEditor: View {
             .overlay {
                 TextEditor(text: $draft.text)
                     .font(.system(size: fontSize))
+                    .multilineTextAlignment(draft.centered == true ? .center : .leading)
                     .scrollContentBackground(.hidden)
                     .focused(focus)
             }
