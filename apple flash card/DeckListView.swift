@@ -88,14 +88,16 @@ struct DeckListView: View {
             .overlay {
                 if decks.isEmpty {
                     ContentUnavailableView("No Decks", systemImage: "rectangle.stack",
-                                           description: Text("Tap + to create your first deck."))
+                                           description: Text(Device.isPhone
+                                               ? "Use the backup menu to restore decks made on your iPad."
+                                               : "Tap + to create your first deck."))
                 }
             }
             .searchable(text: $query, prompt: "Search cards and handwriting")
             .overlay {
                 if !settledQuery.trimmingCharacters(in: .whitespaces).isEmpty {
                     SearchResultsView(query: settledQuery, decks: decks, indexingLeft: indexingLeft) { hit in
-                        searchTarget = SearchTarget(deck: hit.deck, card: hit.card)
+                        if !Device.isPhone { searchTarget = SearchTarget(deck: hit.deck, card: hit.card) }
                     }
                     .background(Color(.systemGroupedBackground))
                 }
@@ -204,8 +206,10 @@ struct DeckListView: View {
                     }
                     AppearanceMenu()
                     NewCardLinesMenu()
-                    Button { newDeck() } label: { Label("New Deck", systemImage: "plus") }
-                        .keyboardShortcut("n", modifiers: .command)
+                    if !Device.isPhone {
+                        Button { newDeck() } label: { Label("New Deck", systemImage: "plus") }
+                            .keyboardShortcut("n", modifiers: .command)
+                    }
                 }
             }
         }

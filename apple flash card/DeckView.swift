@@ -49,11 +49,13 @@ struct DeckView: View {
                     HStack(spacing: 10) {
                         StatChip(value: due.count, label: "due", color: .orange)
                         StatChip(value: deck.newCount, label: "new", color: .blue)
-                        StatChip(value: deck.masteredCount, label: "mastered", color: .green)
+                        if !Device.isPhone {
+                            StatChip(value: deck.masteredCount, label: "mastered", color: .green)
+                        }
                         Spacer()
                         if !due.isEmpty {
                             Button { startStudy(due) } label: {
-                                Label("Study Due", systemImage: "play.fill")
+                                Label("Study Due", systemImage: "play.fill").lineLimit(1).fixedSize()
                             }
                             .buttonStyle(.borderedProminent)
                         }
@@ -68,13 +70,13 @@ struct DeckView: View {
                 .onChange(of: filter) { Haptics.select() }
 
                 LazyVGrid(columns: columns, spacing: 24) {
-                    if filter == .all {
+                    if filter == .all && !Device.isPhone {
                         // New Card tile sits first so it's always in the top-left, however many cards there are.
                         AddCardCell { addCard() }
                     }
                     ForEach(visible) { card in
                         CardThumbnail(card: card)
-                            .onTapGesture { Haptics.tap(); open(card) }
+                            .onTapGesture { if !Device.isPhone { Haptics.tap(); open(card) } }
                             .contextMenu { menu(for: card, in: all) }
                     }
                 }
@@ -84,7 +86,7 @@ struct DeckView: View {
                                            description: Text("Tap Star in the card editor, or long-press a card."))
                 }
             }
-            .padding(32)
+            .padding(Device.isPhone ? 16 : 32)
         }
         .onChange(of: editor?.id) {
             // Coming back from the editor (or study), stay where that card is.
@@ -142,6 +144,19 @@ struct DeckView: View {
 
     @ViewBuilder
     private func menu(for card: Card, in cards: [Card]) -> some View {
+        if Device.isPhone {
+            Button(card.isStarred ? "Unstar" : "Star",
+                   systemImage: card.isStarred ? "star.slash" : "star") {
+                Haptics.tap()
+                card.isStarred.toggle()
+            }
+        } else {
+            fullMenu(for: card, in: cards)
+        }
+    }
+
+    @ViewBuilder
+    private func fullMenu(for card: Card, in cards: [Card]) -> some View {
         let index = cards.firstIndex(where: { $0 === card }) ?? 0
         Button("Edit", systemImage: "pencil") { open(card) }
         Button(card.isStarred ? "Unstar" : "Star",
@@ -260,8 +275,9 @@ struct StatChip: View {
             Text("\(value)").font(.headline.monospacedDigit())
             Text(label).font(.subheadline)
         }
+        .lineLimit(1).fixedSize()
         .foregroundStyle(value > 0 ? color : .secondary)
-        .padding(.horizontal, 12).padding(.vertical, 6)
+        .padding(.horizontal, Device.isPhone ? 8 : 12).padding(.vertical, 6)
         .background(Capsule().fill((value > 0 ? color : Color.secondary).opacity(0.15)))
     }
 }

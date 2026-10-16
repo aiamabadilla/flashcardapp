@@ -119,3 +119,23 @@ final class PDFExportTests: XCTestCase {
         XCTAssertEqual(CGPDFDocument(url as CFURL)?.numberOfPages, 1)
     }
 }
+
+@MainActor
+final class PhotoOpacityTests: XCTestCase {
+    func testOpacitySurvivesSaveAndIsSeenByEveryReader() throws {
+        let context = ModelContext(try AppStore_.makeContainer(inMemory: true))
+        let deck = Deck(title: "D"); context.insert(deck)
+        let card = deck.newCard()
+        var item = ImageItem(side: 0, file: "x.jpg", aspect: 0.75)
+        card.updateImageItem(item)
+        item.opacity = 0.4
+        card.updateImageItem(item)
+        XCTAssertEqual(card.imageItems(.front).first?.opacity, 0.4)
+        XCTAssertTrue(card.imageItemsJSON.contains("0.4"))
+        // Moving the photo afterwards must not drop the opacity.
+        var moved = card.imageItem(item.id)!
+        moved.x = 0.1
+        card.updateImageItem(moved)
+        XCTAssertEqual(card.imageItem(item.id)?.opacity, 0.4)
+    }
+}

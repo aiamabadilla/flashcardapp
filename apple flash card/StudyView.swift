@@ -34,11 +34,11 @@ struct StudyView: View {
 
             if let card = current {
                 ProgressView(value: Double(known), total: Double(max(total, 1)))
-                    .padding(.horizontal, 40)
+                    .padding(.horizontal, Device.isPhone ? 16 : 40)
 
                 CardFace(card: card, side: showingBack ? .back : .front, corner: 18, inset: 24)
                     .shadow(radius: 10)
-                    .padding(.horizontal, 40)
+                    .padding(.horizontal, Device.isPhone ? 16 : 40)
                     .rotation3DEffect(.degrees(angle), axis: (x: 0, y: 1, z: 0))
                     .onTapGesture { flip() }
                     .accessibilityElement(children: .ignore)
@@ -48,14 +48,14 @@ struct StudyView: View {
                     .accessibilityAction { flip() }
 
                 if showingBack {
-                    HStack(spacing: 24) {
+                    HStack(spacing: Device.isPhone ? 12 : 24) {
                         Button { answer(known: false) } label: {
-                            Label("Don't Know", systemImage: "xmark").frame(width: 200)
+                            Label("Don't Know", systemImage: "xmark").frame(maxWidth: 200)
                         }
                         .tint(.red)
                         .keyboardShortcut(.leftArrow, modifiers: [])
                         Button { answer(known: true) } label: {
-                            Label("Know It", systemImage: "checkmark").frame(width: 200)
+                            Label("Know It", systemImage: "checkmark").frame(maxWidth: 200)
                         }
                         .tint(.green)
                         .keyboardShortcut(.rightArrow, modifiers: [])
@@ -96,10 +96,12 @@ struct StudyView: View {
                             .foregroundStyle(card.isStarred ? .yellow : .accentColor)
                     }
                     .accessibilityLabel(card.isStarred ? "Unstar card" : "Star card")
-                    Button { Haptics.tap(); editing = EditorTarget(card: card) } label: {
-                        Image(systemName: "pencil")
+                    if !Device.isPhone {
+                        Button { Haptics.tap(); editing = EditorTarget(card: card) } label: {
+                            Image(systemName: "pencil")
+                        }
+                        .accessibilityLabel("Edit card")
                     }
-                    .accessibilityLabel("Edit card")
                 }
                 .font(.title3)
                 .frame(width: 100, alignment: .trailing)
