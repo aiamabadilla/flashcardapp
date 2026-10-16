@@ -1,9 +1,11 @@
 import SwiftUI
 import SwiftData
+import UniformTypeIdentifiers
 
 @main
 struct FlashcardsApp: App {
     @AppStorage("appearance") private var appearance: Appearance = .system
+    @State private var openedMessage: String?
 
     /// Built once. If the store can't be opened we show a recovery screen instead of crashing,
     /// and never delete the file ourselves.
@@ -16,9 +18,33 @@ struct FlashcardsApp: App {
                 DeckListView()
                     .preferredColorScheme(appearance.scheme)
                     .modelContainer(container)
+                    // Tapping a .imstudy backup in Files, AirDrop or Mail opens it here.
+                    .onOpenURL { url in openedMessage = Self.restore(url, into: container) }
+                    .alert("Backup", isPresented: Binding(get: { openedMessage != nil },
+                                                          set: { if !$0 { openedMessage = nil } })) {
+                        Button("OK") { openedMessage = nil }
+                    } message: { Text(openedMessage ?? "") }
             case .failure(let error):
                 StoreErrorView(message: error.localizedDescription)
             }
+        }
+    }
+}
+
+extension FlashcardsApp {
+    /// Restores a backup the person opened from outside the app. Only `.imstudy` files are taken.
+    @MainActor
+    static func restore(_ url: URL, into container: ModelContainer) -> String {
+        guard url.isFileURL, url.pathExtension.lowercased() == "imstudy" else {
+            return "IMSTUDY can only open .imstudy backup files."
+        }
+        do {
+            let r = try Backup.importArchive(from: url, into: container.mainContext)
+            Haptics.success()
+            return "Restored \(plural(r.decks, "deck")) with \(plural(r.cards, "card"))."
+        } catch {
+            Haptics.warning()
+            return error.localizedDescription
         }
     }
 }

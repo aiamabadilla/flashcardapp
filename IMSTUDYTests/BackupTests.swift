@@ -151,3 +151,32 @@ final class BackupTests: XCTestCase {
     }
 }
 
+
+@MainActor
+final class OpenedFileTests: XCTestCase {
+    func testOnlyImstudyFilesAreAccepted() throws {
+        let container = try AppStore_.makeContainer(inMemory: true)
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("notes.txt")
+        try Data("hello".utf8).write(to: url)
+        XCTAssertEqual(FlashcardsApp.restore(url, into: container), "IMSTUDY can only open .imstudy backup files.")
+        XCTAssertEqual(try container.mainContext.fetchCount(FetchDescriptor<Deck>()), 0)
+    }
+
+    func testBadBackupLeavesNothingBehind() throws {
+        let container = try AppStore_.makeContainer(inMemory: true)
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("broken.imstudy")
+        try Data("not json".utf8).write(to: url)
+        XCTAssertFalse(FlashcardsApp.restore(url, into: container).hasPrefix("Restored"))
+        XCTAssertEqual(try container.mainContext.fetchCount(FetchDescriptor<Deck>()), 0)
+    }
+
+    func testRoundTripOpensAsABackup() throws {
+        let source = try AppStore_.makeContainer(inMemory: true)
+        let deck = Deck(title: "Round trip"); source.mainContext.insert(deck)
+        _ = deck.newCard(); _ = deck.newCard()
+        let url = try Backup.export([deck], name: "Round trip")
+        XCTAssertEqual(url.pathExtension, "imstudy")
+        let target = try AppStore_.makeContainer(inMemory: true)
+        XCTAssertEqual(FlashcardsApp.restore(url, into: target), "Restored 1 deck with 2 cards.")
+    }
+}
