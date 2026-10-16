@@ -11,7 +11,7 @@ enum HandwritingIndex {
     private nonisolated static let emptyMarker = "empty"
 
     /// Bump when the reading method improves, so cards are read again with the new method.
-    private nonisolated static let methodVersion = "v2"
+    private nonisolated static let methodVersion = "v3"
 
     /// A short, stable fingerprint of a drawing's bytes (and of the reading method).
     nonisolated static func fingerprint(_ data: Data) -> String {
@@ -48,7 +48,7 @@ enum HandwritingIndex {
         return PKDrawing(strokes: strokes)
     }
 
-    private nonisolated static func read(_ drawing: PKDrawing, pass: Pass) -> String {
+    private nonisolated static func read(_ drawing: PKDrawing, pass: Pass, customWords: [String]) -> String {
         let height = max(drawing.bounds.height, 1)
         let long = max(drawing.bounds.width, height)
         let scale = min(max(pass.targetSide / long, 1), 8)
@@ -75,16 +75,34 @@ enum HandwritingIndex {
         request.recognitionLevel = .accurate
         request.usesLanguageCorrection = true
         request.recognitionLanguages = ["en-US"]
+        // Terms from the person's own cards (e.g. "carcin", "cephal") that language correction
+        // would otherwise turn into ordinary English words.
+        if !customWords.isEmpty { request.customWords = customWords }
         try? VNImageRequestHandler(cgImage: cgImage).perform([request])
         return (request.results ?? []).compactMap { $0.topCandidates(1).first?.string }.joined(separator: " ")
     }
 
     /// Reads the text in a saved drawing. Runs off the main thread.
-    static func recognize(_ data: Data) async -> String {
+    static func recognize(_ data: Data, customWords: [String] = []) async -> String {
         await Task.detached(priority: .utility) {
             guard let drawing = try? PKDrawing(data: data), !drawing.bounds.isEmpty else { return "" }
-            return passes.map { read(drawing, pass: $0) }.joined(separator: " ")
+            return passes.map { read(drawing, pass: $0, customWords: customWords) }.joined(separator: " ")
         }.value
+    }
+
+    /// Words worth teaching the recogniser: the distinct words of the typed text on the person's
+    /// cards, most common first. Short words are left out because ordinary English already
+    /// covers them. English only.
+    nonisolated static func vocabulary(from texts: [String], limit: Int = 800) -> [String] {
+        var counts: [String: Int] = [:]
+        for text in texts {
+            for word in CardSearch.tokens(text) where word.count >= 4 && word.count <= 24
+                && word.unicodeScalars.allSatisfy({ $0.isASCII }) && !word.allSatisfy(\.isNumber) {
+                counts[word, default: 0] += 1
+            }
+        }
+        return counts.sorted { $0.value != $1.value ? $0.value > $1.value : $0.key < $1.key }
+            .prefix(limit).map(\.key)
     }
 
     /// One side of one card, as plain values so it can be hashed and read off the main thread.
@@ -118,8 +136,9 @@ enum HandwritingIndex {
         guard left > 0 else { return }
 
         let byID = Dictionary(uniqueKeysWithValues: cards.map { ($0.persistentModelID, $0) })
+        let words = vocabulary(from: cards.filter { $0.deletedAt == 0 }.flatMap { $0.allTextItems.map(\.text) })
         for item in dirty {
-            let text = item.job.data.isEmpty ? "" : await recognize(item.job.data)
+            let text = item.job.data.isEmpty ? "" : await recognize(item.job.data, customWords: words)
             if let card = byID[item.job.id] {
                 card.setInk(text: text, hash: item.hash, item.job.side == 0 ? .front : .back)
             }

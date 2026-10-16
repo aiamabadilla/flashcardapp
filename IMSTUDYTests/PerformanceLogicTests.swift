@@ -164,3 +164,22 @@ final class HandwritingMatchTests: XCTestCase {
         XCTAssertTrue(CardSearch.handwritingMatches("café", "cafe"))
     }
 }
+
+final class VocabularyTests: XCTestCase {
+    func testVocabularyKeepsDistinctLongerEnglishWordsMostCommonFirst() {
+        let words = HandwritingIndex.vocabulary(from: [
+            "What word root means “heart”? cardi", "cardiology (study of the heart)",
+            "cat 123 2026", "Café résumé", "cardi- again cardi"])
+        XCTAssertEqual(words.first, "cardi")                     // most common
+        XCTAssertTrue(words.contains("heart"))
+        XCTAssertTrue(words.contains("cardiology"))
+        XCTAssertFalse(words.contains("cat"))                     // too short
+        XCTAssertFalse(words.contains("2026"))                    // number
+        XCTAssertTrue(words.contains("cafe"))                     // accents are folded away
+        XCTAssertEqual(Set(words).count, words.count)             // no duplicates
+    }
+    func testVocabularyIsCapped() {
+        let texts = (0..<2000).map { "word\($0)abc" }
+        XCTAssertEqual(HandwritingIndex.vocabulary(from: texts, limit: 50).count, 50)
+    }
+}
