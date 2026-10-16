@@ -139,3 +139,28 @@ final class PhotoOpacityTests: XCTestCase {
         XCTAssertEqual(card.imageItem(item.id)?.opacity, 0.4)
     }
 }
+
+final class HandwritingMatchTests: XCTestCase {
+    func testExactAndCaseInsensitive() {
+        XCTAssertTrue(CardSearch.handwritingMatches("The Mitochondria is key", "mitochondria"))
+    }
+    func testToleratesMisreadLetters() {
+        XCTAssertTrue(CardSearch.handwritingMatches("mitochondna powerhouse", "mitochondria"))   // r→n
+        XCTAssertTrue(CardSearch.handwritingMatches("carclnoma", "carcinoma"))                    // i→l
+    }
+    func testShortWordsMustBeExact() {
+        XCTAssertFalse(CardSearch.handwritingMatches("cut", "cat"))
+        XCTAssertTrue(CardSearch.handwritingMatches("the cat sat", "cat"))
+    }
+    func testEveryWordMustMatch() {
+        XCTAssertTrue(CardSearch.handwritingMatches("blue heart cell", "heart cell"))
+        XCTAssertFalse(CardSearch.handwritingMatches("blue heart", "heart cell"))
+    }
+    func testUnrelatedWordsDoNotMatch() {
+        XCTAssertFalse(CardSearch.handwritingMatches("gastritis", "arthritis"))
+        XCTAssertFalse(CardSearch.handwritingMatches("", "anything"))
+    }
+    func testDiacriticsIgnored() {
+        XCTAssertTrue(CardSearch.handwritingMatches("café", "cafe"))
+    }
+}

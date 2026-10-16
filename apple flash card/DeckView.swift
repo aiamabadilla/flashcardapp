@@ -29,6 +29,8 @@ struct DeckView: View {
     @State private var study: StudyTarget?
     @State private var lastOpened: Card?
     @State private var pdf: ExportedFile?
+    @State private var query = ""
+    @State private var indexing = false
 
     private let columns = [GridItem(.flexible(), spacing: 24),
                            GridItem(.flexible(), spacing: 24)]
@@ -37,7 +39,9 @@ struct DeckView: View {
         let all = deck.sortedCards
         let starred = all.filter(\.isStarred)
         let due = deck.dueCards
-        let visible = filter == .all ? all : starred
+        let base = filter == .all ? all : starred
+        let q = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        let visible = q.isEmpty ? base : base.filter { !CardSearch.matches($0, q).isEmpty }
 
         ScrollViewReader { proxy in
         ScrollView {
@@ -70,7 +74,7 @@ struct DeckView: View {
                 .onChange(of: filter) { Haptics.select() }
 
                 LazyVGrid(columns: columns, spacing: 24) {
-                    if filter == .all && !Device.isPhone {
+                    if filter == .all && !Device.isPhone && q.isEmpty {
                         // New Card tile sits first so it's always in the top-left, however many cards there are.
                         AddCardCell { addCard() }
                     }
@@ -81,7 +85,10 @@ struct DeckView: View {
                     }
                 }
 
-                if filter == .starred && starred.isEmpty {
+                if !q.isEmpty && visible.isEmpty {
+                    ContentUnavailableView.search(text: q)
+                }
+                if filter == .starred && starred.isEmpty && q.isEmpty {
                     ContentUnavailableView("No Starred Cards", systemImage: "star",
                                            description: Text("Tap Star in the card editor, or long-press a card."))
                 }
@@ -97,6 +104,12 @@ struct DeckView: View {
             guard study == nil, let card = lastOpened else { return }
             DispatchQueue.main.async { proxy.scrollTo(card.id, anchor: .center) }
         }
+        }
+        .searchable(text: $query, prompt: "Search this deck, including handwriting")
+        .task(id: query.isEmpty) {
+            // Read any handwriting that hasn't been read yet, so it can be found.
+            guard !query.isEmpty else { return }
+            await HandwritingIndex.indexAll(in: context)
         }
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {

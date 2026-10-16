@@ -151,23 +151,82 @@ struct SearchHit: Identifiable {
 }
 
 enum CardSearch {
+    /// Which parts of a card match the query ("Front · typed text", "Back · handwriting"...).
+    static func matches(_ card: Card, _ query: String) -> [String] {
+        var found: [String] = []
+        for side in [Side.front, .back] {
+            let name = side == .front ? "Front" : "Back"
+            let typed = card.textItems(side).map(\.text).joined(separator: " ")
+            if typed.localizedStandardContains(query) { found.append("\(name) · typed text") }
+            if handwritingMatches(card.inkText(side), query) { found.append("\(name) · handwriting") }
+        }
+        return found
+    }
+
     static func run(_ query: String, in decks: [Deck]) -> [SearchHit] {
         let q = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !q.isEmpty else { return [] }
         var hits: [SearchHit] = []
         for deck in decks {
             for card in deck.sortedCards {
-                var found: [String] = []
-                for side in [Side.front, .back] {
-                    let name = side == .front ? "Front" : "Back"
-                    let typed = card.textItems(side).map(\.text).joined(separator: " ")
-                    if typed.localizedStandardContains(q) { found.append("\(name) · typed text") }
-                    if card.inkText(side).localizedStandardContains(q) { found.append("\(name) · handwriting") }
-                }
+                let found = matches(card, q)
                 if !found.isEmpty { hits.append(SearchHit(card: card, deck: deck, matches: found)) }
             }
         }
         return hits
+    }
+
+    // MARK: Handwriting matching
+
+    /// Recognised handwriting is rarely perfect, so every word of the query must appear in the
+    /// text exactly, as part of a word, or (for longer words) within a letter or two of a word.
+    nonisolated static func handwritingMatches(_ text: String, _ query: String) -> Bool {
+        let words = tokens(text)
+        let wanted = tokens(query)
+        guard !wanted.isEmpty, !words.isEmpty else { return false }
+        return wanted.allSatisfy { target in
+            words.contains { word in
+                if word.contains(target) { return true }
+                let allowed = target.count >= 8 ? 2 : (target.count >= 4 ? 1 : 0)
+                guard allowed > 0 else { return false }
+                // Compare against the word, and against a same-length slice of a longer word.
+                if abs(word.count - target.count) <= allowed,
+                   editDistance(Array(word), Array(target), limit: allowed) <= allowed { return true }
+                if word.count > target.count {
+                    let chars = Array(word)
+                    for start in 0...(chars.count - target.count) {
+                        let slice = Array(chars[start..<(start + target.count)])
+                        if editDistance(slice, Array(target), limit: allowed) <= allowed { return true }
+                    }
+                }
+                return false
+            }
+        }
+    }
+
+    nonisolated static func tokens(_ text: String) -> [String] {
+        text.folding(options: [.diacriticInsensitive, .caseInsensitive], locale: nil)
+            .components(separatedBy: CharacterSet.alphanumerics.inverted)
+            .filter { !$0.isEmpty }
+    }
+
+    /// Levenshtein distance, giving up (returning limit + 1) once it must exceed `limit`.
+    nonisolated static func editDistance(_ a: [Character], _ b: [Character], limit: Int) -> Int {
+        if a == b { return 0 }
+        if abs(a.count - b.count) > limit { return limit + 1 }
+        var previous = Array(0...b.count)
+        for i in 1...max(a.count, 1) where i <= a.count {
+            var current = [i] + Array(repeating: 0, count: b.count)
+            var rowMin = current[0]
+            for j in 1...max(b.count, 1) where j <= b.count {
+                let cost = a[i - 1] == b[j - 1] ? 0 : 1
+                current[j] = min(previous[j] + 1, current[j - 1] + 1, previous[j - 1] + cost)
+                rowMin = min(rowMin, current[j])
+            }
+            if rowMin > limit { return limit + 1 }
+            previous = current
+        }
+        return previous[b.count]
     }
 }
 
