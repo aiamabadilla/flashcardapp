@@ -291,7 +291,7 @@ nonisolated enum SpreadsheetCardLayout {
         for (side, text) in [(0, front), (1, back)] {
             let header = headers.indices.contains(side) ? headers[side] : ""
             if !header.isEmpty {
-                items.append(TextItem(side: side, text: header, x: 0.05, y: 0.04, w: 0.9, size: 0.024, centered: true))
+                items.append(TextItem(side: side, text: header, x: 0.05, y: 0.04, w: 0.9, size: 0.03, centered: true))
             }
             guard !text.isEmpty else { continue }
             let size = bodySize(for: text)

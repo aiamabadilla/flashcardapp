@@ -96,3 +96,26 @@ final class TrashLogicTests: XCTestCase {
         XCTAssertEqual(titles, ["live", "recent"])
     }
 }
+
+@MainActor
+final class PDFExportTests: XCTestCase {
+    func testPDFHasFrontAndBackPagesAndMirrorsBacks() throws {
+        let context = ModelContext(try AppStore_.makeContainer(inMemory: true))
+        let deck = Deck(title: "Print/Test")
+        context.insert(deck)
+        for _ in 0..<9 { _ = deck.newCard() }       // 9 cards → 2 groups → 4 pages
+        let url = try PDFExport.export(deck)
+        let pdf = CGPDFDocument(url as CFURL)
+        XCTAssertEqual(pdf?.numberOfPages, 4)
+        XCTAssertEqual(url.lastPathComponent, "Print-Test.pdf")
+        let front = PDFExport.frame(slot: 0, mirrored: false)
+        let back = PDFExport.frame(slot: 0, mirrored: true)
+        XCTAssertEqual(front.minX + back.maxX, PDFExport.page.width, accuracy: 0.01)
+    }
+
+    func testEmptyDeckStillProducesAPage() throws {
+        let deck = Deck(title: "Empty")
+        let url = try PDFExport.export(deck)
+        XCTAssertEqual(CGPDFDocument(url as CFURL)?.numberOfPages, 1)
+    }
+}

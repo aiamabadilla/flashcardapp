@@ -17,6 +17,7 @@ struct DeckListView: View {
     @State private var showingImporter = false
     @State private var backupMessage: String?
     @State private var showingSpreadsheet = false
+    @State private var pdf: ExportedFile?
     @State private var query = ""
     /// The query after a short pause in typing; searches run on this, not on every keystroke.
     @State private var settledQuery = ""
@@ -54,6 +55,7 @@ struct DeckListView: View {
                         Button("Export Deck", systemImage: "square.and.arrow.up") {
                             export([deck], name: deck.title)
                         }
+                        Button("Export as PDF (print)", systemImage: "printer") { exportPDF(deck) }
                         Button("Delete", systemImage: "trash", role: .destructive) { pendingDelete = deck }
                     }
                     // Attached to the row (not the whole screen) so the popup points at this deck.
@@ -113,6 +115,7 @@ struct DeckListView: View {
             }
             .sheet(isPresented: $showingStats) { StatsView() }
             .sheet(isPresented: $showingTrash) { RecentlyDeletedView() }
+            .sheet(item: $pdf) { file in ShareSheet(url: file.url) }
             .sheet(item: $exported) { file in
                 ShareSheet(url: file.url) { completed in
                     guard completed else { return }
@@ -222,6 +225,15 @@ struct DeckListView: View {
             Haptics.tap()
         } catch {
             backupMessage = "Couldn't create the backup: \(error.localizedDescription)"
+        }
+    }
+
+    private func exportPDF(_ deck: Deck) {
+        do {
+            pdf = ExportedFile(url: try PDFExport.export(deck), decks: 1, cards: deck.liveCards.count)
+            Haptics.tap()
+        } catch {
+            backupMessage = "Couldn't create the PDF: \(error.localizedDescription)"
         }
     }
 

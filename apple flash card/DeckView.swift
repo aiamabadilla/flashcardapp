@@ -28,6 +28,7 @@ struct DeckView: View {
     @State private var editor: EditorTarget?
     @State private var study: StudyTarget?
     @State private var lastOpened: Card?
+    @State private var pdf: ExportedFile?
 
     private let columns = [GridItem(.flexible(), spacing: 24),
                            GridItem(.flexible(), spacing: 24)]
@@ -99,6 +100,10 @@ struct DeckView: View {
         .toolbar {
             ToolbarItemGroup(placement: .primaryAction) {
                 AppearanceMenu()
+                Button {
+                    Haptics.tap()
+                    if let url = try? PDFExport.export(deck) { pdf = ExportedFile(url: url) }
+                } label: { Label("Export as PDF", systemImage: "printer") }
                 Button(role: .destructive) { Haptics.tap(); confirmingDelete = true } label: {
                     Label("Delete Deck", systemImage: "trash")
                 }
@@ -131,6 +136,7 @@ struct DeckView: View {
         }
         .undoBanner()
         .fullScreenCover(item: $editor) { CardEditor(deck: deck, start: $0.card) }
+        .sheet(item: $pdf) { ShareSheet(url: $0.url) }
         .fullScreenCover(item: $study) { StudyView(cards: $0.cards, deck: deck) }
     }
 
