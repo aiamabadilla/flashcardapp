@@ -109,8 +109,8 @@ enum PDFExport {
         }
 
         let ref = card.effectiveInkWidth
-        if let ink = InkRenderer.render(card.drawing(side), dark: false, refWidth: ref,
-                                        scale: max(1, min(1600 / max(ref, 1), 3))) {
+        if let ink = InkRenderQueue.sync({ InkRenderer.render(card.drawing(side), dark: false, refWidth: ref,
+                                        scale: max(1, min(1600 / max(ref, 1), 3))) }) {
             ink.draw(in: rect)
         }
 

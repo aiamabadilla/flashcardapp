@@ -164,3 +164,53 @@ final class InkWidthTests: XCTestCase {
         withLastKnown(912) { XCTAssertEqual(withInk.backupInkWidth, 640) }
     }
 }
+
+/// A deck full of cards appearing at once used to deadlock PencilKit's shared GPU resources:
+/// the ink never drew and the screen's glass effects stalled. Everything now draws through one
+/// queue; this fails (by timing out) if that regresses.
+final class InkRenderQueueTests: XCTestCase {
+    func testManyDrawingsRenderAtOnceWithoutDeadlock() async throws {
+        let inks: [PKInkingTool.InkType] = [.pen, .pencil, .marker, .monoline, .watercolor, .crayon]
+        let drawings: [Data] = (0..<120).map { i in
+            let base = RecognitionSmokeTests.drawing(word: "distal\(i % 9)")
+            let strokes = base.strokes.map { s -> PKStroke in
+                var t = s
+                t.ink = PKInk(inks[i % inks.count], color: UIColor(red: 0.08, green: 0.5, blue: 0.98, alpha: 1))
+                return t
+            }
+            return PKDrawing(strokes: strokes).dataRepresentation()
+        }
+        let done = expectation(description: "all rendered")
+        Task.detached {
+            let rendered = await withTaskGroup(of: Int.self) { group -> Int in
+                for (i, data) in drawings.enumerated() {
+                    group.addTask {
+                        let image = await InkRenderQueue.run {
+                            InkRenderer.render(data, dark: i % 2 == 0, refWidth: 800 + Double(i % 7), scale: 1.25)
+                        }
+                        return image == nil ? 0 : 1
+                    }
+                }
+                return await group.reduce(0, +)
+            }
+            XCTAssertEqual(rendered, drawings.count)
+            done.fulfill()
+        }
+        await fulfillment(of: [done], timeout: 60)
+    }
+
+    func testReadingHandwritingAlongsideManyThumbnailRenders() async throws {
+        let data = RecognitionSmokeTests.drawing(word: "distal").dataRepresentation()
+        let done = expectation(description: "mixed")
+        Task.detached {
+            await withTaskGroup(of: Void.self) { group in
+                for _ in 0..<4 { group.addTask { _ = await HandwritingIndex.recognize(data) } }
+                for _ in 0..<80 {
+                    group.addTask { _ = await InkRenderQueue.run { InkRenderer.render(data, dark: false, refWidth: 800, scale: 1) } }
+                }
+            }
+            done.fulfill()
+        }
+        await fulfillment(of: [done], timeout: 90)
+    }
+}

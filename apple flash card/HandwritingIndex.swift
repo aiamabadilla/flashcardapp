@@ -63,7 +63,7 @@ enum HandwritingIndex {
         return PKDrawing(strokes: strokes)
     }
 
-    private nonisolated static func read(_ drawing: PKDrawing, pass: Pass, customWords: [String]) -> String {
+    private nonisolated static func read(_ drawing: PKDrawing, pass: Pass, customWords: [String]) async -> String {
         let height = max(drawing.bounds.height, 1)
         let long = max(drawing.bounds.width, height)
         let scale = min(max(pass.targetSide / long, 1), 8)
@@ -74,9 +74,13 @@ enum HandwritingIndex {
                                            dy: -max(24, height * pass.paddingFactor))
 
         // Vision reads dark text on a light background, so draw the ink on white.
-        var ink: UIImage?
-        UITraitCollection(userInterfaceStyle: .light).performAsCurrent {
-            ink = source.image(from: bounds, scale: scale)
+        // Drawn through the shared ink queue (see InkRenderQueue), without holding a thread.
+        let ink: UIImage? = await InkRenderQueue.run {
+            var image: UIImage?
+            UITraitCollection(userInterfaceStyle: .light).performAsCurrent {
+                image = source.image(from: bounds, scale: scale)
+            }
+            return image
         }
         guard let ink else { return "" }
         let format = UIGraphicsImageRendererFormat.default()
@@ -143,15 +147,16 @@ enum HandwritingIndex {
             // Each line of writing on its own (small words get lost when a whole card is read at
             // once), then the whole drawing. The plain reading comes first; thicker fallbacks are
             // only tried when it finds nothing, which keeps reading a big deck quick.
-            func firstReading(_ d: PKDrawing, _ passes: [Pass]) -> String {
+            func firstReading(_ d: PKDrawing, _ passes: [Pass]) async -> String {
                 for pass in passes {
-                    let text = read(d, pass: pass, customWords: customWords)
+                    let text = await read(d, pass: pass, customWords: customWords)
                     if !text.trimmingCharacters(in: .whitespaces).isEmpty { return text }
                 }
                 return ""
             }
-            let lines = lineClusters(drawing).map { firstReading($0, linePasses) }
-            let whole = firstReading(drawing, wholePasses)
+            var lines: [String] = []
+            for line in lineClusters(drawing) { lines.append(await firstReading(line, linePasses)) }
+            let whole = await firstReading(drawing, wholePasses)
             return (lines + [whole]).joined(separator: " ")
         }.value
     }

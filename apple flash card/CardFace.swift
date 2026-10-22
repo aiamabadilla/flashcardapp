@@ -4,6 +4,27 @@ import PencilKit
 
 /// Renders saved PKDrawings to images. Rendering is slow, so results are cached
 /// (keyed by the drawing's bytes and the interface style).
+/// PencilKit draws strokes through one shared GPU resource, and many drawings rendering at once
+/// (a deck of cards all appearing together) deadlock it: every worker thread ends up waiting on
+/// the shared queue while its owner waits for a thread to finish loading a texture. So all ink
+/// drawing goes through this single queue, one at a time. Tasks waiting their turn are
+/// suspended rather than holding a thread.
+enum InkRenderQueue {
+    nonisolated static let queue = DispatchQueue(label: "imstudy.ink-render", qos: .userInitiated)
+
+    /// Runs `work` on the queue and returns its result without blocking the caller's thread.
+    nonisolated static func run<T: Sendable>(_ work: @escaping @Sendable () -> T) async -> T {
+        await withCheckedContinuation { continuation in
+            queue.async { continuation.resume(returning: work()) }
+        }
+    }
+
+    /// For the main thread, which must have the result now (building a PDF). Don't call it from
+    /// many background tasks at once (they'd hold every worker thread), and never from work that
+    /// is itself running on `queue`.
+    nonisolated static func sync<T>(_ work: () -> T) -> T { queue.sync(execute: work) }
+}
+
 enum InkRenderer {
     private static let cache: NSCache<NSString, UIImage> = {
         let c = NSCache<NSString, UIImage>()
@@ -44,7 +65,7 @@ enum InkRenderer {
     /// Synchronous convenience (cache, then render). Used where an image is needed immediately.
     static func image(_ data: Data, dark: Bool, refWidth: Double = 0, scale: CGFloat = 2) -> UIImage? {
         if let hit = cached(data, dark: dark, refWidth: refWidth, scale: scale) { return hit }
-        guard let image = render(data, dark: dark, refWidth: refWidth, scale: scale) else { return nil }
+        guard let image = InkRenderQueue.sync({ render(data, dark: dark, refWidth: refWidth, scale: scale) }) else { return nil }
         store(image, for: data, dark: dark, refWidth: refWidth, scale: scale)
         return image
     }
@@ -83,9 +104,9 @@ struct DrawingImage: View {
             }
             let snapshot = data
             let width = refWidth
-            let result = await Task.detached(priority: .userInitiated) {
+            let result = await InkRenderQueue.run {
                 InkRenderer.render(snapshot, dark: dark, refWidth: width, scale: scale)
-            }.value
+            }
             guard !Task.isCancelled, let result else { return }
             InkRenderer.store(result, for: snapshot, dark: dark, refWidth: width, scale: scale)
             rendered = result
