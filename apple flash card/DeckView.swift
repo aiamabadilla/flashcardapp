@@ -115,6 +115,7 @@ struct DeckView: View {
             await HandwritingIndex.indexAll(in: context)
         }
         .navigationBarTitleDisplayMode(.inline)
+        .toolbarBackground(Device.isPhone ? .visible : .automatic, for: .navigationBar)
         .toolbar {
             ToolbarItemGroup(placement: .primaryAction) {
                 AppearanceMenu()

@@ -185,6 +185,7 @@ struct DeckListView: View {
                 }
             }
             .navigationTitle("Decks")
+            .toolbarBackground(Device.isPhone ? .visible : .automatic, for: .navigationBar)
             .navigationDestination(for: Deck.self) { DeckView(deck: $0) }
             .toolbar {
                 ToolbarItemGroup(placement: .primaryAction) {
@@ -208,7 +209,7 @@ struct DeckListView: View {
                         Label("Backup", systemImage: "externaldrive")
                     }
                     AppearanceMenu()
-                    NewCardLinesMenu()
+                    if !Device.isPhone { NewCardLinesMenu() }
                     if !Device.isPhone {
                         Button { newDeck() } label: { Label("New Deck", systemImage: "plus") }
                             .keyboardShortcut("n", modifiers: .command)

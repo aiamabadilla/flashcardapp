@@ -142,7 +142,7 @@ struct CardFace: View {
                 RoundedRectangle(cornerRadius: corner).fill(Color.paper(scheme))
                 if card.isLined(side) { CardLines() }
                 ForEach(card.imageItems(side)) { PlacedImage(item: $0, card: geo.size) }
-                DrawingImage(data: card.drawing(side), refWidth: card.inkRefWidth > 0 ? card.inkRefWidth : Card.lastKnownCardWidth, padding: inset)
+                DrawingImage(data: card.drawing(side), refWidth: card.effectiveInkWidth, padding: inset)
                 ForEach(card.textItems(side)) { PlacedText(item: $0, card: geo.size) }
             }
         }

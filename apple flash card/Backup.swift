@@ -97,7 +97,7 @@ enum Backup {
             textItemsJSON: textJSON, imageItemsJSON: card.imageItemsJSON, photos: photos,
             leitnerBox: card.leitnerBox, dueTime: card.dueTime, reviewCount: card.reviewCount,
             correctCount: card.correctCount, lastReviewed: card.lastReviewed,
-            inkRefWidth: card.inkRefWidth > 0 ? card.inkRefWidth : nil)
+            inkRefWidth: card.backupInkWidth)
     }
 
     // MARK: Import

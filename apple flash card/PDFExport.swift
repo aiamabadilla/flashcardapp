@@ -108,7 +108,7 @@ enum PDFExport {
             cg.restoreGState()
         }
 
-        let ref = card.inkRefWidth > 0 ? card.inkRefWidth : Card.lastKnownCardWidth
+        let ref = card.effectiveInkWidth
         if let ink = InkRenderer.render(card.drawing(side), dark: false, refWidth: ref,
                                         scale: max(1, min(1600 / max(ref, 1), 3))) {
             ink.draw(in: rect)

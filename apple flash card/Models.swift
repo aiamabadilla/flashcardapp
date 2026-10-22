@@ -148,6 +148,28 @@ enum ItemCache {
         get { UserDefaults.standard.double(forKey: "lastCardWidth") }
         set { UserDefaults.standard.set(newValue, forKey: "lastCardWidth") }
     }
+    /// Used when nothing is known: an older card on a device that has never shown the editor
+    /// (an iPhone, or a fresh install after restoring a backup).
+    static let defaultCardWidth = 800.0
+
+    /// The canvas width this card's ink is drawn against, so it lands where it was written.
+    /// Falls back to the width the editor last had on this device, then to a typical width,
+    /// but never to "fit the ink to the card", which moves and rescales the writing.
+    var effectiveInkWidth: Double {
+        if inkRefWidth > 0 { return inkRefWidth }
+        let known = Card.lastKnownCardWidth
+        return known > 0 ? known : Card.defaultCardWidth
+    }
+
+    /// The width to save in a backup. Cards that never recorded one get the width this device
+    /// last had, so the backup shows them as they look here. Nil when there's no ink to place.
+    var backupInkWidth: Double? {
+        if inkRefWidth > 0 { return inkRefWidth }
+        guard front.count > 64 || back.count > 64 else { return nil }
+        let known = Card.lastKnownCardWidth
+        return known > 0 ? known : nil
+    }
+
     // Handwriting search: text read from each side's ink, and a fingerprint of the ink it was
     // read from (so a side is only re-read after it changes).
     var frontInkText: String = ""

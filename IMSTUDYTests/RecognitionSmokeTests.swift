@@ -131,3 +131,36 @@ extension RecognitionSmokeTests {
         XCTAssertTrue(CardSearch.handwritingMatches(text, "dis"), text)
     }
 }
+
+@MainActor
+final class InkWidthTests: XCTestCase {
+    private func withLastKnown(_ value: Double, _ body: () throws -> Void) rethrows {
+        let old = Card.lastKnownCardWidth
+        Card.lastKnownCardWidth = value
+        defer { Card.lastKnownCardWidth = old }
+        try body()
+    }
+
+    func testRecordedWidthWinsThenLastKnownThenDefault() {
+        let card = Card(order: 0)
+        withLastKnown(0) { XCTAssertEqual(card.effectiveInkWidth, Card.defaultCardWidth) }
+        withLastKnown(950) { XCTAssertEqual(card.effectiveInkWidth, 950) }
+        card.inkRefWidth = 700
+        withLastKnown(950) { XCTAssertEqual(card.effectiveInkWidth, 700) }
+    }
+
+    func testBackupFillsInTheWidthForCardsThatNeverRecordedOne() throws {
+        let context = ModelContext(try AppStore_.makeContainer(inMemory: true))
+        let deck = Deck(title: "Old"); context.insert(deck)
+        let withInk = deck.newCard()
+        withInk.front = RecognitionSmokeTests.drawing(word: "distal").dataRepresentation()
+        let blank = deck.newCard()
+        withLastKnown(912) {
+            XCTAssertEqual(withInk.backupInkWidth, 912)
+            XCTAssertNil(blank.backupInkWidth)                       // nothing drawn, nothing to place
+        }
+        withLastKnown(0) { XCTAssertNil(withInk.backupInkWidth) }     // nothing known: leave it unset
+        withInk.inkRefWidth = 640
+        withLastKnown(912) { XCTAssertEqual(withInk.backupInkWidth, 640) }
+    }
+}
